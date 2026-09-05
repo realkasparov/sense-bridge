@@ -47,6 +47,9 @@ export interface ImageRequest {
   budgetUsd: number;
   mediaType: string;
   dataBase64: string;
+  /** Pixel size of what was sent, so the model can reason about proportions. */
+  width?: number;
+  height?: number;
 }
 
 export interface DiagRequest { type: "diag"; id: number }
@@ -101,6 +104,8 @@ export function parseRequest(raw: unknown): ParseResult {
       type: "image", id: raw.id, targetLanguage: raw.targetLanguage, model: raw.model,
       effort: raw.effort as Effort, budgetUsd: raw.budgetUsd,
       mediaType: raw.mediaType, dataBase64: raw.dataBase64,
+      width: typeof raw.width === "number" ? raw.width : undefined,
+      height: typeof raw.height === "number" ? raw.height : undefined,
     }};
   }
 

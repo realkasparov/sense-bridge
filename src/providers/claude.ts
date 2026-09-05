@@ -80,8 +80,11 @@ cannot produce one.
 Return JSON: {"regions":[{"text":"<as printed>","translation":"<in the target language>",
 "box":[x, y, width, height]}]}
 
-Coordinates are fractions of the image, from 0 to 1, with the origin at the top left. Give one
-region per visually separate run of text — a label, a caption, a heading — not one per word.
+Coordinates are fractions of the image, from 0 to 1, with the origin at the top left. The box
+must bound the printed text closely: a box larger than the words it covers hides the picture
+around them, and boxes that overlap each other cover one another up. Give one region per
+visually separate run of text — a label, a caption, a heading — not one per word, and let
+regions touch but never overlap.
 
 Read only what is actually legible. Never guess at text you cannot make out and never invent a
 label that is not there: a missing region is recoverable, an invented one is not. Leave code,
@@ -152,7 +155,10 @@ export const claudeAdapter: ProviderAdapter = {
         type: "user",
         message: { role: "user", content: [
           { type: "image", source: { type: "base64", media_type: req.mediaType, data: req.dataBase64 } },
-          { type: "text", text: JSON.stringify({ targetLanguage: req.targetLanguage }) },
+          { type: "text", text: JSON.stringify({
+              targetLanguage: req.targetLanguage,
+              imageWidth: req.width, imageHeight: req.height,
+            }) },
         ]},
       }) + "\n";
     }
