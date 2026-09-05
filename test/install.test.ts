@@ -80,7 +80,11 @@ describe("install.sh", () => {
     expect(answer.ok).toBe(true);
   }, 15_000);
 
-  it("refuses to run without an extension id", () => {
-    expect(() => execFileSync("bash", [SCRIPT], { env: { ...process.env, HOME: home } })).toThrow();
+  it("installs for the pinned extension id when none is given", () => {
+    const home2 = mkdtempSync(join(tmpdir(), "sb-home-"));
+    execFileSync("bash", [SCRIPT], { env: { ...process.env, HOME: home2 } });
+    const m = JSON.parse(readFileSync(join(home2,
+      "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.sense-bridge.host.json"), "utf8"));
+    expect(m.allowed_origins[0]).toMatch(/^chrome-extension:\/\/[a-p]{32}\/$/);
   });
 });
