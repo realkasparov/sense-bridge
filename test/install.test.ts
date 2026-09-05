@@ -19,7 +19,7 @@ beforeAll(() => {
 
 describe("install.sh", () => {
   const manifestPath = () => join(home,
-    "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.sense-bridge.host.json");
+    "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.sense_bridge.host.json");
 
   it("writes the native messaging manifest", () => {
     expect(existsSync(manifestPath())).toBe(true);
@@ -84,7 +84,7 @@ describe("install.sh", () => {
     const home2 = mkdtempSync(join(tmpdir(), "sb-home-"));
     execFileSync("bash", [SCRIPT], { env: { ...process.env, HOME: home2 } });
     const m = JSON.parse(readFileSync(join(home2,
-      "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.sense-bridge.host.json"), "utf8"));
+      "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.sense_bridge.host.json"), "utf8"));
     expect(m.allowed_origins[0]).toMatch(/^chrome-extension:\/\/[a-p]{32}\/$/);
   });
 });
