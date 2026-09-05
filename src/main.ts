@@ -68,10 +68,22 @@ const configKey = (req: WorkRequest) =>
    createHash("sha256").update(adapter.buildArgs(req).join("\u0000")).digest("hex").slice(0, 16)]
     .join("|");
 
-process.on("uncaughtException", e => {
-  log("UNCAUGHT", String(e instanceof Error ? e.stack : e));
+export const HOST_VERSION = "0.1.0";
+
+process.on("uncaughtException", error => {
+  log("UNCAUGHT", String(error instanceof Error ? error.stack : error));
   process.exit(1);
 });
+
+// Without this a rejected promise ends the process with nothing written down,
+// and the log is the only place anything about this host can be reported.
+process.on("unhandledRejection", reason => {
+  log("UNHANDLED", String(reason instanceof Error ? reason.stack : reason));
+});
+
+// Chrome closing the port makes writing to stdout fail. Left unhandled that
+// surfaces as a crash, when it only means there is no longer anyone to answer.
+process.stdout.on("error", () => { stdinClosed = true; maybeExit(); });
 
 let inFlight = 0;
 let stdinClosed = false;
@@ -109,6 +121,7 @@ process.stdin.on("data", chunk => {
     const req = parsed.value;
     if (req.type === "diag") {
       send(req.id, { ok: true, diag: {
+        host: HOST_VERSION,
         node: process.version, PATH: process.env.PATH ?? "(unset)",
         HOME: process.env.HOME ?? "(unset)", cliPath, cwd: WORK_DIR,
         poolSize: pool.size(), log: LOG_PATH,
@@ -124,17 +137,31 @@ process.stdin.on("data", chunk => {
     }
 
     inFlight++;
-    log(`RUN id=${req.id} type=${req.type} `
+    try {
+      dispatch(req);
+    } catch (error) {
+      // Without this the counter never comes back down and the host outlives
+      // the connection, waiting for work that already failed.
+      inFlight--;
+      log("DISPATCH", String(error));
+      send(req.id, { ok: false, stage: "dispatch", error: String(error) });
+      maybeExit();
+    }
+  }
+});
+
+function dispatch(req: Exclude<WorkRequest, never>): void {
+  log(`RUN id=${req.id} type=${req.type} `
       + (req.type === "translate" ? `segments=${req.segments.length}`
         : req.type === "image" ? `bytes=${req.dataBase64.length}`
         : `digest=${req.digest.length}`));
-    pendingArgs = fakeArgs ? [] : adapter.buildArgs(req);
-    // The context pass runs once per page. Pooling it would spawn warm processes
-    // for a configuration the next batch immediately drains.
-    const proc = req.type !== "translate"
-      ? spawnCli(cliPath, pendingArgs, WORK_DIR)
-      : pool.acquire(configKey(req));
-    void runOn(proc, adapter, req)
+  pendingArgs = fakeArgs ? [] : adapter.buildArgs(req);
+  // The context pass runs once per page. Pooling it would spawn warm processes
+  // for a configuration the next batch immediately drains.
+  const proc = req.type !== "translate"
+    ? spawnCli(cliPath!, pendingArgs, WORK_DIR)
+    : pool.acquire(configKey(req));
+  void runOn(proc, adapter, req)
       .then(r => {
         // A run that failed with the CLI under quarantine almost always failed
         // for that reason, and the macOS dialog names neither this extension nor
@@ -157,8 +184,7 @@ process.stdin.on("data", chunk => {
         log("HANDLER", String(e));
         send(req.id, { ok: false, stage: "handler", error: String(e) });
       })
-      .finally(() => { inFlight--; maybeExit(); });
-  }
-});
+    .finally(() => { inFlight--; maybeExit(); });
+}
 
 process.stdin.on("end", () => { stdinClosed = true; maybeExit(); });

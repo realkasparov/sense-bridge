@@ -63,6 +63,9 @@ export function runOn(
   return new Promise<RunResult>(resolve => {
     let settled = false;
     let stderr = "";
+    // Only the beginning is ever reported, and a chatty CLI can produce
+    // megabytes: keeping the rest holds memory for something nobody reads.
+    const STDERR_LIMIT = 8192;
 
     const finish = (r: Omit<RunResult, "wallMs" | "stderr">) => {
       if (settled) return;
@@ -79,7 +82,9 @@ export function runOn(
 
     child.on("error", e => finish({ ok: false, stage: "spawn", outcome: null, error: String(e) }));
     child.stdin.on("error", e => finish({ ok: false, stage: "spawn", outcome: null, error: String(e) }));
-    child.stderr.on("data", d => { stderr += String(d); });
+    child.stderr.on("data", d => {
+      if (stderr.length < STDERR_LIMIT) stderr += String(d).slice(0, STDERR_LIMIT - stderr.length);
+    });
 
     // Answer on the first result line: with stream-json input the CLI stays alive
     // waiting for more input, so waiting for exit would hang forever.
