@@ -16,7 +16,7 @@ function ask(message: unknown, env: Record<string, string> = {}): Promise<any[]>
     const dec = new MessageDecoder();
     const got: any[] = [];
     child.stdout.on("data", c => {
-      for (const m of dec.push(c)) got.push(m);
+      for (const message of dec.push(c)) if (message.ok) got.push(message.value);
       if (got.length) { child.kill(); resolve(got); }
     });
     child.stdin.write(encodeMessage(message));

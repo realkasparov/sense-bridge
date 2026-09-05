@@ -53,9 +53,11 @@ describe("chunkResponse", () => {
     expect(frames.length).toBeGreaterThan(1);
 
     const d = new MessageDecoder();
-    const parts = frames.flatMap(f => d.push(f)) as Array<{
-      id: number; chunkIndex: number; chunkCount: number; body: string;
-    }>;
+    const parts = frames
+      .flatMap(f => d.push(f))
+      .flatMap(message => (message.ok ? [message.value] : [])) as Array<{
+        id: number; chunkIndex: number; chunkCount: number; body: string;
+      }>;
     expect(parts.length).toBe(frames.length);
     parts.forEach((p, i) => {
       expect(p.id).toBe(1);
@@ -87,7 +89,9 @@ describe("chunkResponse", () => {
   it("reassembles non-Latin payloads exactly", () => {
     const payload = { ok: true, result: "Мост смысла 🌉 ".repeat(500) };
     const d = new MessageDecoder();
-    const parts = chunkResponse(1, payload, 1200).flatMap(f => d.push(f)) as Array<{ body: string }>;
+    const parts = chunkResponse(1, payload, 1200)
+      .flatMap(f => d.push(f))
+      .flatMap(message => (message.ok ? [message.value] : [])) as Array<{ body: string }>;
     expect(JSON.parse(parts.map(p => p.body).join(""))).toEqual(payload);
   });
 });

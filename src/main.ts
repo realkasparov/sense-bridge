@@ -11,7 +11,9 @@ import { ProcessPool } from "./pool.js";
 import { runOn, spawnCli, type CliProcess } from "./runner.js";
 import { log, LOG_PATH } from "./log.js";
 
-const POOL_SIZE = Number(process.env.SENSEBRIDGE_POOL ?? 3);
+/** An unreadable value would silently switch prewarming off rather than fail. */
+const configuredPool = Number(process.env.SENSEBRIDGE_POOL);
+const POOL_SIZE = Number.isInteger(configuredPool) && configuredPool > 0 ? configuredPool : 3;
 // An empty cwd keeps the CLI from discovering a CLAUDE.md on this machine.
 const WORK_DIR = mkdtempSync(join(tmpdir(), "sense-bridge-"));
 
@@ -49,6 +51,18 @@ const pool = new ProcessPool<CliProcess>({
 // unref so the reaper never keeps the host from exiting.
 setInterval(() => pool.reap(), 30_000).unref();
 
+/**
+ * Asked once. isQuarantined shells out to xattr, and doing that on every failed
+ * run blocks the event loop while three lanes are in flight — for an answer that
+ * cannot change while the host is alive.
+ */
+let quarantineAnswer: boolean | null = null;
+const quarantined = (): boolean | null => {
+  if (!cliPath) return null;
+  quarantineAnswer ??= isQuarantined(cliPath);
+  return quarantineAnswer;
+};
+
 const configKey = (req: WorkRequest) =>
   [req.type, req.model, req.effort, req.budgetUsd, req.targetLanguage,
    createHash("sha256").update(adapter.buildArgs(req).join("\u0000")).digest("hex").slice(0, 16)]
@@ -61,11 +75,28 @@ process.on("uncaughtException", e => {
 
 let inFlight = 0;
 let stdinClosed = false;
-const maybeExit = () => { if (stdinClosed && inFlight === 0) { pool.drain(); process.exit(0); } };
+const maybeExit = () => {
+  if (!stdinClosed || inFlight !== 0) return;
+  pool.drain();
+  // process.exit drops whatever is still buffered for stdout, which on a large
+  // final answer means truncating it.
+  if (process.stdout.writableLength === 0) process.exit(0);
+  else process.stdout.once("drain", () => process.exit(0));
+};
 
 const decoder = new MessageDecoder();
 process.stdin.on("data", chunk => {
-  for (const raw of decoder.push(chunk)) {
+  for (const message of decoder.push(chunk)) {
+    if (!message.ok) {
+      log("FRAME", message.error);
+      // Answered under id 0 so the extension sees something rather than a
+      // silent disconnect; a broken stream ends the session, a bad frame does not.
+      send(0, { ok: false, stage: "framing", error: message.error });
+      if (message.fatal) { stdinClosed = true; maybeExit(); }
+      continue;
+    }
+
+    const raw = message.value;
     const parsed = parseRequest(raw);
     const id = (raw as { id?: number }).id ?? 0;
 
@@ -81,7 +112,7 @@ process.stdin.on("data", chunk => {
         node: process.version, PATH: process.env.PATH ?? "(unset)",
         HOME: process.env.HOME ?? "(unset)", cliPath, cwd: WORK_DIR,
         poolSize: pool.size(), log: LOG_PATH,
-        quarantined: cliPath ? isQuarantined(cliPath) : null,
+        quarantined: quarantined(),
       }});
       continue;
     }
@@ -112,8 +143,7 @@ process.stdin.on("data", chunk => {
         // before anything else that might also be true.
         const signedOut = r.ok ? null : authFailureHint(
           r.outcome?.apiErrorStatus ?? null, `${r.stderr} ${r.outcome?.text ?? ""}`);
-        const quarantineHint = !r.ok && cliPath && isQuarantined(cliPath)
-          ? QUARANTINE_HINT : undefined;
+        const quarantineHint = !r.ok && cliPath && quarantined() ? QUARANTINE_HINT : undefined;
         send(req.id, {
           ok: r.ok, stage: r.stage, wallMs: r.wallMs, hint: signedOut ?? quarantineHint,
           result: r.outcome?.text ?? null, usage: r.outcome?.usage ?? null,
