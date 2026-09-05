@@ -19,7 +19,7 @@ beforeAll(() => {
 
 describe("install.sh", () => {
   const manifestPath = () => join(home,
-    "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.sensebridge.host.json");
+    "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.sense-bridge.host.json");
 
   it("writes the native messaging manifest", () => {
     expect(existsSync(manifestPath())).toBe(true);

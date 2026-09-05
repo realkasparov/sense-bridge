@@ -11,7 +11,7 @@ import { log, LOG_PATH } from "./log.js";
 
 const POOL_SIZE = 2;
 // An empty cwd keeps the CLI from discovering a CLAUDE.md on this machine.
-const WORK_DIR = mkdtempSync(join(tmpdir(), "sensebridge-"));
+const WORK_DIR = mkdtempSync(join(tmpdir(), "sense-bridge-"));
 const adapter = claudeAdapter;
 const cliPath = process.env.SENSEBRIDGE_CLI_PATH ?? adapter.detect();
 const fakeArgs = process.env.SENSEBRIDGE_FAKE_ARGS === "1";
