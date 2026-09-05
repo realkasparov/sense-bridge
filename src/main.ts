@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MessageDecoder } from "./framing.js";
 import { chunkResponse, parseRequest, type WorkRequest } from "./protocol.js";
-import { claudeAdapter } from "./providers/claude.js";
+import { claudeAdapter, isQuarantined, QUARANTINE_HINT } from "./providers/claude.js";
 import { ProcessPool } from "./pool.js";
 import { runOn, spawnCli, type CliProcess } from "./runner.js";
 import { log, LOG_PATH } from "./log.js";
@@ -79,6 +79,7 @@ process.stdin.on("data", chunk => {
         node: process.version, PATH: process.env.PATH ?? "(unset)",
         HOME: process.env.HOME ?? "(unset)", cliPath, cwd: WORK_DIR,
         poolSize: pool.size(), log: LOG_PATH,
+        quarantined: cliPath ? isQuarantined(cliPath) : null,
       }});
       continue;
     }
@@ -102,8 +103,13 @@ process.stdin.on("data", chunk => {
       : pool.acquire(configKey(req));
     void runOn(proc, adapter, req)
       .then(r => {
+        // A run that failed with the CLI under quarantine almost always failed
+        // for that reason, and the macOS dialog names neither this extension nor
+        // a remedy.
+        const quarantineHint = !r.ok && cliPath && isQuarantined(cliPath)
+          ? QUARANTINE_HINT : undefined;
         send(req.id, {
-          ok: r.ok, stage: r.stage, wallMs: r.wallMs,
+          ok: r.ok, stage: r.stage, wallMs: r.wallMs, hint: quarantineHint,
           result: r.outcome?.text ?? null, usage: r.outcome?.usage ?? null,
           costUsd: r.outcome?.costUsd ?? null,
           rateLimited: r.outcome?.rateLimited ?? false,

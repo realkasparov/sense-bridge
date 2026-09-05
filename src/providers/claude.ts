@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -94,6 +95,27 @@ Output only the JSON object. No preamble, no code fences.`;
 export function buildImagePrompt(): string {
   return IMAGE_PROMPT;
 }
+
+/**
+ * Homebrew marks what it installs with com.apple.quarantine. The CLI itself is
+ * signed and runs fine, but it unpacks a native module to a temporary file at
+ * run time, and that copy inherits the attribute while carrying no signature of
+ * its own. Launched from a terminal the user has already trusted, nobody
+ * notices; launched by Chrome, Gatekeeper blocks the unpacked file and shows a
+ * dialog about software that "was not opened", which says nothing about this
+ * extension and leaves no clue what to do.
+ */
+export function isQuarantined(path: string): boolean {
+  const result = spawnSync("/usr/bin/xattr", ["-p", "com.apple.quarantine", path], {
+    encoding: "utf8",
+  });
+  return result.status === 0 && result.stdout.trim() !== "";
+}
+
+export const QUARANTINE_HINT =
+  "macOS has the provider CLI under quarantine, so the native module it unpacks "
+  + "at run time is blocked when Chrome is the parent process. Clear it with: "
+  + "xattr -d com.apple.quarantine \"$(readlink -f \"$(command -v claude)\")\"";
 
 export const claudeAdapter: ProviderAdapter = {
   name: "claude",
