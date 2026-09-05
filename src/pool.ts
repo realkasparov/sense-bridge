@@ -25,6 +25,7 @@ export interface PoolOptions<T> {
  */
 export class ProcessPool<T extends Poolable> {
   #warm: T[] = [];
+  #handedOut: T[] = [];
   #key: string | null = null;
   #opts: Required<Pick<PoolOptions<T>, "size" | "spawnFn">> & { maxAgeMs: number; now: () => number };
 
@@ -48,7 +49,13 @@ export class ProcessPool<T extends Poolable> {
     this.#dropStale();
 
     const process = this.#warm.shift() ?? this.#opts.spawnFn(key);
-    while (this.#warm.length < this.#opts.size) this.#warm.push(this.#opts.spawnFn(key));
+    this.#handedOut.push(process);
+
+    // The budget covers processes in use as well as warm ones. Refilling to the
+    // full size regardless meant three lanes running alongside three spares:
+    // six CLI processes at once, for a pool nominally holding three.
+    const room = this.#opts.size - this.#handedOut.length;
+    while (this.#warm.length < room) this.#warm.push(this.#opts.spawnFn(key));
     return process;
   }
 
@@ -60,10 +67,17 @@ export class ProcessPool<T extends Poolable> {
   drain(): void {
     for (const warm of this.#warm) { try { warm.kill(); } catch { /* already gone */ } }
     this.#warm = [];
+    this.#handedOut = [];
     this.#key = null;
   }
 
+  /** Processes alive and in use, which the size budget also covers. */
+  inUse(): number { return this.#handedOut.length; }
+
   #dropStale(): void {
+    // A process handed out and since finished no longer counts against the budget.
+    this.#handedOut = this.#handedOut.filter(process => process.isAlive());
+
     const cutoff = this.#opts.now() - this.#opts.maxAgeMs;
     const keep: T[] = [];
     for (const warm of this.#warm) {

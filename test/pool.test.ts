@@ -34,11 +34,13 @@ describe("ProcessPool", () => {
     pool.drain();
   });
 
-  it("warms the pool to its configured size after the first acquire", () => {
+  it("warms up to its configured size after the first acquire", () => {
+    // The size is a budget for processes altogether: one in use plus two warm.
     const c = counter();
     const pool = new ProcessPool<FakeProc>({ size: 3, spawnFn: c.spawnFn });
     pool.acquire(K);
-    expect(pool.size()).toBe(3);
+    expect(pool.size() + pool.inUse()).toBe(3);
+    expect(pool.size()).toBeGreaterThan(0);
     pool.drain();
   });
 
@@ -104,19 +106,41 @@ describe("ProcessPool", () => {
       size: 2, spawnFn: c.spawnFn, maxAgeMs: 5_000, now: () => clock,
     });
     pool.acquire(K);
-    expect(pool.size()).toBe(2);
+    expect(pool.size()).toBeGreaterThan(0);
     clock += 10_000;
     pool.reap();
     // Idle CLI processes must not linger for the life of the Chrome connection.
     expect(pool.size()).toBe(0);
   });
 
+  it("counts processes in use against its size, not only warm ones", () => {
+    // Refilling to the full size regardless meant three lanes running alongside
+    // three spares: six processes at once for a pool nominally holding three.
+    const c = counter();
+    const pool = new ProcessPool<FakeProc>({ size: 3, spawnFn: c.spawnFn });
+    const held = [pool.acquire(K), pool.acquire(K), pool.acquire(K)];
+    expect(held).toHaveLength(3);
+    expect(pool.size() + pool.inUse()).toBeLessThanOrEqual(3);
+    pool.drain();
+  });
+
+  it("warms up again once the processes in use have finished", () => {
+    const c = counter();
+    const pool = new ProcessPool<FakeProc>({ size: 3, spawnFn: c.spawnFn });
+    const held = pool.acquire(K);
+    held.kill();                       // the request finished
+    pool.acquire(K);
+    expect(pool.size() + pool.inUse()).toBeLessThanOrEqual(3);
+    pool.drain();
+  });
+
   it("kills every idle process on drain", () => {
     const c = counter();
     const pool = new ProcessPool<FakeProc>({ size: 3, spawnFn: c.spawnFn });
     pool.acquire(K);
+    const warm = pool.size();
     pool.drain();
-    expect(pool.size()).toBe(0);
-    expect(c.killed.length).toBeGreaterThanOrEqual(3);
+    expect(pool.size() + pool.inUse()).toBe(0);
+    expect(c.killed.length).toBeGreaterThanOrEqual(warm);
   });
 });
