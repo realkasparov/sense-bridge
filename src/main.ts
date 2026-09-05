@@ -91,11 +91,13 @@ process.stdin.on("data", chunk => {
 
     inFlight++;
     log(`RUN id=${req.id} type=${req.type} `
-      + (req.type === "translate" ? `segments=${req.segments.length}` : `digest=${req.digest.length}`));
+      + (req.type === "translate" ? `segments=${req.segments.length}`
+        : req.type === "image" ? `bytes=${req.dataBase64.length}`
+        : `digest=${req.digest.length}`));
     pendingArgs = fakeArgs ? [] : adapter.buildArgs(req);
     // The context pass runs once per page. Pooling it would spawn warm processes
     // for a configuration the next batch immediately drains.
-    const proc = req.type === "context"
+    const proc = req.type !== "translate"
       ? spawnCli(cliPath, pendingArgs, WORK_DIR)
       : pool.acquire(configKey(req));
     void runOn(proc, adapter, req)
@@ -103,6 +105,7 @@ process.stdin.on("data", chunk => {
         send(req.id, {
           ok: r.ok, stage: r.stage, wallMs: r.wallMs,
           result: r.outcome?.text ?? null, usage: r.outcome?.usage ?? null,
+          costUsd: r.outcome?.costUsd ?? null,
           rateLimited: r.outcome?.rateLimited ?? false,
           apiErrorStatus: r.outcome?.apiErrorStatus ?? null,
           error: r.error, stderr: r.stderr,

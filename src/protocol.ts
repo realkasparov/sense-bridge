@@ -37,8 +37,20 @@ export interface ContextRequest {
   digest: string;
 }
 
+/** Reading an image: the model returns legible text with boxes, never a new image. */
+export interface ImageRequest {
+  type: "image";
+  id: number;
+  targetLanguage: string;
+  model: string;
+  effort: Effort;
+  budgetUsd: number;
+  mediaType: string;
+  dataBase64: string;
+}
+
 export interface DiagRequest { type: "diag"; id: number }
-export type WorkRequest = TranslateRequest | ContextRequest;
+export type WorkRequest = TranslateRequest | ContextRequest | ImageRequest;
 export type HostRequest = WorkRequest | DiagRequest;
 
 export type ParseResult =
@@ -69,6 +81,26 @@ export function parseRequest(raw: unknown): ParseResult {
       type: "context", id: raw.id, targetLanguage: raw.targetLanguage, model: raw.model,
       effort: raw.effort as Effort, budgetUsd: raw.budgetUsd,
       title: typeof raw.title === "string" ? raw.title : "", digest: raw.digest,
+    }};
+  }
+
+  if (raw.type === "image") {
+    if (typeof raw.targetLanguage !== "string" || raw.targetLanguage === "")
+      return { ok: false, error: "targetLanguage must be a non-empty string" };
+    if (typeof raw.model !== "string" || raw.model === "")
+      return { ok: false, error: "model must be a non-empty string" };
+    if (!EFFORTS.includes(raw.effort as Effort))
+      return { ok: false, error: `effort must be one of ${EFFORTS.join(", ")}` };
+    if (typeof raw.budgetUsd !== "number" || !(raw.budgetUsd > 0))
+      return { ok: false, error: "budgetUsd must be a positive number" };
+    if (typeof raw.mediaType !== "string" || !raw.mediaType.startsWith("image/"))
+      return { ok: false, error: "mediaType must name an image type" };
+    if (typeof raw.dataBase64 !== "string" || raw.dataBase64 === "")
+      return { ok: false, error: "dataBase64 must be a non-empty string" };
+    return { ok: true, value: {
+      type: "image", id: raw.id, targetLanguage: raw.targetLanguage, model: raw.model,
+      effort: raw.effort as Effort, budgetUsd: raw.budgetUsd,
+      mediaType: raw.mediaType, dataBase64: raw.dataBase64,
     }};
   }
 

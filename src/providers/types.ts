@@ -6,6 +6,8 @@ export interface CliOutcome {
   apiErrorStatus: number | null;
   rateLimited: boolean;
   usage: unknown | null;
+  /** Notional on a subscription, but the same scale --max-budget-usd works in. */
+  costUsd: number | null;
 }
 
 export interface ProviderAdapter {
