@@ -3,8 +3,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MessageDecoder } from "./framing.js";
-import { chunkResponse, parseRequest, type TranslateRequest } from "./protocol.js";
-import { claudeAdapter, buildKernelPrompt } from "./providers/claude.js";
+import { chunkResponse, parseRequest, type WorkRequest } from "./protocol.js";
+import { claudeAdapter } from "./providers/claude.js";
 import { ProcessPool } from "./pool.js";
 import { runOn, spawnCli, type CliProcess } from "./runner.js";
 import { log, LOG_PATH } from "./log.js";
@@ -36,9 +36,10 @@ const pool = new ProcessPool<CliProcess>({
 // unref so the reaper never keeps the host from exiting.
 setInterval(() => pool.reap(), 30_000).unref();
 
-const configKey = (req: TranslateRequest) =>
-  [req.model, req.effort, req.budgetUsd, req.targetLanguage, req.mode,
-   createHash("sha256").update(buildKernelPrompt(req)).digest("hex").slice(0, 16)].join("|");
+const configKey = (req: WorkRequest) =>
+  [req.type, req.model, req.effort, req.budgetUsd, req.targetLanguage,
+   createHash("sha256").update(adapter.buildArgs(req).join("\u0000")).digest("hex").slice(0, 16)]
+    .join("|");
 
 process.on("uncaughtException", e => {
   log("UNCAUGHT", String(e instanceof Error ? e.stack : e));
@@ -78,7 +79,8 @@ process.stdin.on("data", chunk => {
     }
 
     inFlight++;
-    log(`RUN id=${req.id} segments=${req.segments.length}`);
+    log(`RUN id=${req.id} type=${req.type} `
+      + (req.type === "translate" ? `segments=${req.segments.length}` : `digest=${req.digest.length}`));
     pendingArgs = fakeArgs ? [] : adapter.buildArgs(req);
     const proc = pool.acquire(configKey(req));
     void runOn(proc, adapter, req)

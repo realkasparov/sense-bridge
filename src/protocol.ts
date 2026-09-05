@@ -15,11 +15,31 @@ export interface TranslateRequest {
   budgetUsd: number;
   styleRules: string;
   glossary: Record<string, string>;
+  /** Produced by a context request; empty when whole-page context is off. */
+  contextBrief?: string;
   segments: Segment[];
 }
 
+/**
+ * The first pass of whole-page context mode: one cheap request that returns a
+ * brief and a glossary rather than a translation, which every later batch then
+ * carries. Sending the page itself with each batch would make cost grow with
+ * the square of the batch count — measured, and rejected, on the bridge.
+ */
+export interface ContextRequest {
+  type: "context";
+  id: number;
+  targetLanguage: string;
+  model: string;
+  effort: Effort;
+  budgetUsd: number;
+  title: string;
+  digest: string;
+}
+
 export interface DiagRequest { type: "diag"; id: number }
-export type HostRequest = TranslateRequest | DiagRequest;
+export type WorkRequest = TranslateRequest | ContextRequest;
+export type HostRequest = WorkRequest | DiagRequest;
 
 export type ParseResult =
   | { ok: true; value: HostRequest }
@@ -33,6 +53,25 @@ export function parseRequest(raw: unknown): ParseResult {
   if (typeof raw.id !== "number") return { ok: false, error: "missing numeric id" };
 
   if (raw.type === "diag") return { ok: true, value: { type: "diag", id: raw.id } };
+
+  if (raw.type === "context") {
+    if (typeof raw.targetLanguage !== "string" || raw.targetLanguage === "")
+      return { ok: false, error: "targetLanguage must be a non-empty string" };
+    if (typeof raw.model !== "string" || raw.model === "")
+      return { ok: false, error: "model must be a non-empty string" };
+    if (!EFFORTS.includes(raw.effort as Effort))
+      return { ok: false, error: `effort must be one of ${EFFORTS.join(", ")}` };
+    if (typeof raw.budgetUsd !== "number" || !(raw.budgetUsd > 0))
+      return { ok: false, error: "budgetUsd must be a positive number" };
+    if (typeof raw.digest !== "string" || raw.digest.trim() === "")
+      return { ok: false, error: "digest must be a non-empty string" };
+    return { ok: true, value: {
+      type: "context", id: raw.id, targetLanguage: raw.targetLanguage, model: raw.model,
+      effort: raw.effort as Effort, budgetUsd: raw.budgetUsd,
+      title: typeof raw.title === "string" ? raw.title : "", digest: raw.digest,
+    }};
+  }
+
   if (raw.type !== "translate") return { ok: false, error: `unknown message type: ${String(raw.type)}` };
 
   if (typeof raw.targetLanguage !== "string" || raw.targetLanguage === "")
@@ -67,7 +106,9 @@ export function parseRequest(raw: unknown): ParseResult {
     value: {
       type: "translate", id: raw.id, targetLanguage: raw.targetLanguage, mode: raw.mode,
       model: raw.model, effort: raw.effort as Effort, budgetUsd: raw.budgetUsd,
-      styleRules: raw.styleRules, glossary: raw.glossary as Record<string, string>, segments,
+      styleRules: raw.styleRules, glossary: raw.glossary as Record<string, string>,
+      contextBrief: typeof raw.contextBrief === "string" ? raw.contextBrief : undefined,
+      segments,
     },
   };
 }

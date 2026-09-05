@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
-import type { TranslateRequest } from "./protocol.js";
+import type { WorkRequest } from "./protocol.js";
 import type { CliOutcome, ProviderAdapter } from "./providers/types.js";
 
 export interface RunResult {
@@ -15,7 +15,7 @@ export interface RunResult {
 export interface RunOptions {
   cliPath: string;
   adapter: ProviderAdapter;
-  req: TranslateRequest;
+  req: WorkRequest;
   cwd: string;
   timeoutMs?: number;
   /** Tests pass [] to run a fake CLI that takes no flags. */
@@ -54,7 +54,7 @@ export function runOnce(opts: RunOptions): Promise<RunResult> {
 export function runOn(
   proc: CliProcess,
   adapter: ProviderAdapter,
-  req: TranslateRequest,
+  req: WorkRequest,
   timeoutMs = 90_000,
 ): Promise<RunResult> {
   const t0 = Date.now();
