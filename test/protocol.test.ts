@@ -70,4 +70,24 @@ describe("chunkResponse", () => {
       expect(f.length).toBeLessThanOrEqual(4096);
     }
   });
+
+  it("measures the cap in bytes, not characters, for non-Latin text", () => {
+    // The cap Chrome enforces is bytes. Cyrillic is two bytes per character and
+    // this extension exists to produce it, so a character-based budget overflows.
+    const ru = { ok: true, result: "Конвейер развёртывания завершился ошибкой. ".repeat(300) };
+    for (const f of chunkResponse(1, ru, 1000)) expect(f.length).toBeLessThanOrEqual(1000);
+  });
+
+  it("keeps four-byte characters under the cap", () => {
+    for (const f of chunkResponse(1, { r: "🌉".repeat(2000) }, 1000)) {
+      expect(f.length).toBeLessThanOrEqual(1000);
+    }
+  });
+
+  it("reassembles non-Latin payloads exactly", () => {
+    const payload = { ok: true, result: "Мост смысла 🌉 ".repeat(500) };
+    const d = new MessageDecoder();
+    const parts = chunkResponse(1, payload, 1200).flatMap(f => d.push(f)) as Array<{ body: string }>;
+    expect(JSON.parse(parts.map(p => p.body).join(""))).toEqual(payload);
+  });
 });

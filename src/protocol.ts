@@ -75,13 +75,39 @@ export function parseRequest(raw: unknown): ParseResult {
 /** Chrome rejects host to extension messages above 1 MB, so large payloads ship in frames. */
 export const MAX_FRAME_BYTES = 900_000;
 
+/**
+ * Chrome's cap is in bytes, and a translation is mostly non-Latin text: Cyrillic
+ * costs two bytes per character and emoji four, so a character-count budget
+ * overshoots by half again. Each chunk is therefore sized by measuring the
+ * encoded frame rather than counting characters.
+ */
 export function chunkResponse(id: number, payload: unknown, maxBytes = MAX_FRAME_BYTES): Buffer[] {
   const json = JSON.stringify(payload);
-  // Reserve room for the envelope's own fields plus the 4-byte length header.
-  const budget = Math.max(1, maxBytes - 200);
+
+  // Measure against placeholder counters wider than any real ones, so the
+  // frames built below can only come out smaller than what was measured.
+  const frameSize = (body: string) =>
+    encodeMessage({ id, chunkIndex: 999_999, chunkCount: 999_999, body }).length;
+
+  if (frameSize("") > maxBytes) {
+    throw new RangeError(`maxBytes ${maxBytes} is too small to hold a frame envelope`);
+  }
+
   const bodies: string[] = [];
-  for (let i = 0; i < json.length; i += budget) bodies.push(json.slice(i, i + budget));
+  let from = 0;
+  while (from < json.length) {
+    // Largest slice whose encoded frame still fits.
+    let lo = 1, hi = json.length - from, take = 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (frameSize(json.slice(from, from + mid)) <= maxBytes) { take = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    bodies.push(json.slice(from, from + take));
+    from += take;
+  }
   if (bodies.length === 0) bodies.push("");
+
   return bodies.map((body, chunkIndex) =>
     encodeMessage({ id, chunkIndex, chunkCount: bodies.length, body }));
 }

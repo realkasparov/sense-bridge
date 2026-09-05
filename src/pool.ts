@@ -1,24 +1,41 @@
+export interface Poolable {
+  spawnedAt: number;
+  isAlive(): boolean;
+  kill(): void;
+}
+
 export interface PoolOptions<T> {
   size: number;
   /** The key carries model, effort and prompt version: all baked in at spawn. */
   spawnFn: (key: string) => T;
+  /** Warm processes older than this are discarded rather than handed out. */
+  maxAgeMs?: number;
+  now?: () => number;
 }
 
 /**
  * Keeps CLI processes booted ahead of demand so the ~570ms boot does not land in
  * the critical path of every batch.
  *
- * Two invariants: every process is single-use, which is what keeps token cost
- * linear in batch count instead of quadratic; and the pool is keyed by
- * configuration, because model, effort and system prompt are fixed at spawn time
- * and a process warmed for one settings combination cannot serve another.
+ * Three invariants: every process is single-use, which is what keeps token cost
+ * linear in batch count instead of quadratic; the pool is keyed by configuration,
+ * because model, effort and system prompt are fixed at spawn time; and a process
+ * is only handed out while it is alive and fresh, since a warm CLI can exit on
+ * its own and an idle one must not linger for the life of the Chrome connection.
  */
-export class ProcessPool<T extends { kill(): void }> {
+export class ProcessPool<T extends Poolable> {
   #warm: T[] = [];
   #key: string | null = null;
-  #opts: PoolOptions<T>;
+  #opts: Required<Pick<PoolOptions<T>, "size" | "spawnFn">> & { maxAgeMs: number; now: () => number };
 
-  constructor(opts: PoolOptions<T>) { this.#opts = opts; }
+  constructor(opts: PoolOptions<T>) {
+    this.#opts = {
+      size: opts.size,
+      spawnFn: opts.spawnFn,
+      maxAgeMs: opts.maxAgeMs ?? 120_000,
+      now: opts.now ?? (() => Date.now()),
+    };
+  }
 
   size(): number { return this.#warm.length; }
   currentKey(): string | null { return this.#key; }
@@ -28,14 +45,31 @@ export class ProcessPool<T extends { kill(): void }> {
       this.drain();
       this.#key = key;
     }
+    this.#dropStale();
+
     const p = this.#warm.shift() ?? this.#opts.spawnFn(key);
     while (this.#warm.length < this.#opts.size) this.#warm.push(this.#opts.spawnFn(key));
     return p;
+  }
+
+  /** Kills warm processes that have died or gone stale. Safe to call on a timer. */
+  reap(): void {
+    this.#dropStale();
   }
 
   drain(): void {
     for (const p of this.#warm) { try { p.kill(); } catch { /* already gone */ } }
     this.#warm = [];
     this.#key = null;
+  }
+
+  #dropStale(): void {
+    const cutoff = this.#opts.now() - this.#opts.maxAgeMs;
+    const keep: T[] = [];
+    for (const p of this.#warm) {
+      if (p.isAlive() && p.spawnedAt > cutoff) keep.push(p);
+      else { try { p.kill(); } catch { /* already gone */ } }
+    }
+    this.#warm = keep;
   }
 }

@@ -25,6 +25,7 @@ export interface RunOptions {
 export interface CliProcess {
   child: ChildProcessWithoutNullStreams;
   spawnedAt: number;
+  isAlive(): boolean;
   kill(): void;
 }
 
@@ -35,7 +36,12 @@ export function spawnCli(cliPath: string, args: string[], cwd: string): CliProce
   // the whole host down. runOn replaces these with handlers that report.
   child.on("error", () => {});
   child.stdin.on("error", () => {});
-  return { child, spawnedAt: Date.now(), kill: () => { try { child.kill(); } catch { /* gone */ } } };
+  return {
+    child,
+    spawnedAt: Date.now(),
+    isAlive: () => child.exitCode === null && child.signalCode === null && !child.killed,
+    kill: () => { try { child.kill(); } catch { /* gone */ } },
+  };
 }
 
 export function runOnce(opts: RunOptions): Promise<RunResult> {

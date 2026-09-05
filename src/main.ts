@@ -31,6 +31,11 @@ const pool = new ProcessPool<CliProcess>({
   spawnFn: () => spawnCli(cliPath!, pendingArgs, WORK_DIR),
 });
 
+// Warm processes must not outlive their usefulness: Chrome keeps the host alive
+// for as long as the port is open, and idle CLI processes are not cheap.
+// unref so the reaper never keeps the host from exiting.
+setInterval(() => pool.reap(), 30_000).unref();
+
 const configKey = (req: TranslateRequest) =>
   [req.model, req.effort, req.budgetUsd, req.targetLanguage, req.mode,
    createHash("sha256").update(buildKernelPrompt(req)).digest("hex").slice(0, 16)].join("|");

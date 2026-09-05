@@ -1,16 +1,26 @@
 import { describe, it, expect } from "vitest";
 import { ProcessPool } from "../src/pool.js";
 
-interface FakeProc { id: number; key: string; kill(): void }
+interface FakeProc {
+  id: number; key: string; spawnedAt: number; alive: boolean;
+  isAlive(): boolean; kill(): void;
+}
 
-function counter() {
+function counter(now = () => Date.now()) {
   let n = 0;
+  const all: FakeProc[] = [];
   const killed: number[] = [];
   const spawnFn = (key: string): FakeProc => {
     const id = ++n;
-    return { id, key, kill: () => { killed.push(id); } };
+    const p: FakeProc = {
+      id, key, spawnedAt: now(), alive: true,
+      isAlive: () => p.alive,
+      kill: () => { p.alive = false; killed.push(id); },
+    };
+    all.push(p);
+    return p;
   };
-  return { spawnFn, killed, spawned: () => n };
+  return { spawnFn, killed, all, spawned: () => n };
 }
 
 const K = "sonnet|low|v1";
@@ -18,7 +28,7 @@ const K = "sonnet|low|v1";
 describe("ProcessPool", () => {
   it("does not spawn anything before the first acquire", () => {
     const c = counter();
-    const pool = new ProcessPool({ size: 3, spawnFn: c.spawnFn });
+    const pool = new ProcessPool<FakeProc>({ size: 3, spawnFn: c.spawnFn });
     expect(c.spawned()).toBe(0);
     expect(pool.size()).toBe(0);
     pool.drain();
@@ -26,7 +36,7 @@ describe("ProcessPool", () => {
 
   it("warms the pool to its configured size after the first acquire", () => {
     const c = counter();
-    const pool = new ProcessPool({ size: 3, spawnFn: c.spawnFn });
+    const pool = new ProcessPool<FakeProc>({ size: 3, spawnFn: c.spawnFn });
     pool.acquire(K);
     expect(pool.size()).toBe(3);
     pool.drain();
@@ -34,7 +44,7 @@ describe("ProcessPool", () => {
 
   it("never hands the same process out twice", () => {
     const c = counter();
-    const pool = new ProcessPool({ size: 2, spawnFn: c.spawnFn });
+    const pool = new ProcessPool<FakeProc>({ size: 2, spawnFn: c.spawnFn });
     const ids = new Set<number>();
     for (let i = 0; i < 8; i++) ids.add(pool.acquire(K).id);
     expect(ids.size).toBe(8);
@@ -43,7 +53,7 @@ describe("ProcessPool", () => {
 
   it("serves later acquires from already-warm processes", () => {
     const c = counter();
-    const pool = new ProcessPool({ size: 2, spawnFn: c.spawnFn });
+    const pool = new ProcessPool<FakeProc>({ size: 2, spawnFn: c.spawnFn });
     pool.acquire(K);
     const spawnedAfterWarmup = c.spawned();
     const p = pool.acquire(K);
@@ -53,7 +63,7 @@ describe("ProcessPool", () => {
 
   it("drains and respawns when the configuration key changes", () => {
     const c = counter();
-    const pool = new ProcessPool({ size: 2, spawnFn: c.spawnFn });
+    const pool = new ProcessPool<FakeProc>({ size: 2, spawnFn: c.spawnFn });
     pool.acquire(K);
     const stale = c.killed.length;
     const p = pool.acquire("opus|high|v1");
@@ -63,9 +73,47 @@ describe("ProcessPool", () => {
     pool.drain();
   });
 
+  it("never hands out a process that has died while idle", () => {
+    const c = counter();
+    const pool = new ProcessPool<FakeProc>({ size: 2, spawnFn: c.spawnFn });
+    pool.acquire(K);
+    // A warm CLI can exit on its own: a crash, an expired session, its own timeout.
+    for (const p of c.all) p.alive = false;
+    const got = pool.acquire(K);
+    expect(got.isAlive()).toBe(true);
+    pool.drain();
+  });
+
+  it("discards warm processes older than maxAgeMs", () => {
+    let clock = 1_000;
+    const c = counter(() => clock);
+    const pool = new ProcessPool<FakeProc>({
+      size: 2, spawnFn: c.spawnFn, maxAgeMs: 5_000, now: () => clock,
+    });
+    const first = pool.acquire(K);
+    clock += 10_000;
+    const later = pool.acquire(K);
+    expect(later.spawnedAt).toBeGreaterThan(first.spawnedAt);
+    pool.drain();
+  });
+
+  it("reap() clears stale warm processes without an acquire", () => {
+    let clock = 1_000;
+    const c = counter(() => clock);
+    const pool = new ProcessPool<FakeProc>({
+      size: 2, spawnFn: c.spawnFn, maxAgeMs: 5_000, now: () => clock,
+    });
+    pool.acquire(K);
+    expect(pool.size()).toBe(2);
+    clock += 10_000;
+    pool.reap();
+    // Idle CLI processes must not linger for the life of the Chrome connection.
+    expect(pool.size()).toBe(0);
+  });
+
   it("kills every idle process on drain", () => {
     const c = counter();
-    const pool = new ProcessPool({ size: 3, spawnFn: c.spawnFn });
+    const pool = new ProcessPool<FakeProc>({ size: 3, spawnFn: c.spawnFn });
     pool.acquire(K);
     pool.drain();
     expect(pool.size()).toBe(0);
