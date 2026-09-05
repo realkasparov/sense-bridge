@@ -82,7 +82,11 @@ process.stdin.on("data", chunk => {
     log(`RUN id=${req.id} type=${req.type} `
       + (req.type === "translate" ? `segments=${req.segments.length}` : `digest=${req.digest.length}`));
     pendingArgs = fakeArgs ? [] : adapter.buildArgs(req);
-    const proc = pool.acquire(configKey(req));
+    // The context pass runs once per page. Pooling it would spawn warm processes
+    // for a configuration the next batch immediately drains.
+    const proc = req.type === "context"
+      ? spawnCli(cliPath, pendingArgs, WORK_DIR)
+      : pool.acquire(configKey(req));
     void runOn(proc, adapter, req)
       .then(r => {
         send(req.id, {
