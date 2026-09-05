@@ -125,12 +125,12 @@ export function parseRequest(raw: unknown): ParseResult {
 
   const seen = new Set<string>();
   const segments: Segment[] = [];
-  for (const s of raw.segments) {
-    if (!isRecord(s) || typeof s.id !== "string" || typeof s.text !== "string")
+  for (const candidate of raw.segments) {
+    if (!isRecord(candidate) || typeof candidate.id !== "string" || typeof candidate.text !== "string")
       return { ok: false, error: "each segment needs a string id and string text" };
-    if (seen.has(s.id)) return { ok: false, error: `duplicate segment id: ${s.id}` };
-    seen.add(s.id);
-    segments.push({ id: s.id, text: s.text });
+    if (seen.has(candidate.id)) return { ok: false, error: `duplicate segment id: ${candidate.id}` };
+    seen.add(candidate.id);
+    segments.push({ id: candidate.id, text: candidate.text });
   }
 
   return {

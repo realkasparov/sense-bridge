@@ -99,7 +99,7 @@ export const claudeAdapter: ProviderAdapter = {
   name: "claude",
 
   detect() {
-    for (const p of CANDIDATES) if (existsSync(p)) return p;
+    for (const candidate of CANDIDATES) if (existsSync(candidate)) return candidate;
     return null;
   },
 
@@ -148,22 +148,22 @@ export const claudeAdapter: ProviderAdapter = {
   },
 
   parseLine(line) {
-    let m: unknown;
-    try { m = JSON.parse(line); } catch { return null; }
-    if (typeof m !== "object" || m === null) return null;
-    const r = m as Record<string, unknown>;
-    if (r.type !== "result") return null;
+    let parsed: unknown;
+    try { parsed = JSON.parse(line); } catch { return null; }
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const event = parsed as Record<string, unknown>;
+    if (event.type !== "result") return null;
 
     // subtype stays "success" on API failures - measured. Trust only these two fields.
-    const apiErrorStatus = typeof r.api_error_status === "number" ? r.api_error_status : null;
-    const text = typeof r.result === "string" ? r.result : null;
+    const apiErrorStatus = typeof event.api_error_status === "number" ? event.api_error_status : null;
+    const text = typeof event.result === "string" ? event.result : null;
     return {
-      ok: r.is_error !== true && text !== null,
+      ok: event.is_error !== true && text !== null,
       text,
       apiErrorStatus,
       rateLimited: apiErrorStatus === 429,
-      usage: r.usage ?? null,
-      costUsd: typeof r.total_cost_usd === "number" ? r.total_cost_usd : null,
+      usage: event.usage ?? null,
+      costUsd: typeof event.total_cost_usd === "number" ? event.total_cost_usd : null,
     } satisfies CliOutcome;
   },
 };

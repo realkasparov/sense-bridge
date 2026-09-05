@@ -47,9 +47,9 @@ export class ProcessPool<T extends Poolable> {
     }
     this.#dropStale();
 
-    const p = this.#warm.shift() ?? this.#opts.spawnFn(key);
+    const process = this.#warm.shift() ?? this.#opts.spawnFn(key);
     while (this.#warm.length < this.#opts.size) this.#warm.push(this.#opts.spawnFn(key));
-    return p;
+    return process;
   }
 
   /** Kills warm processes that have died or gone stale. Safe to call on a timer. */
@@ -58,7 +58,7 @@ export class ProcessPool<T extends Poolable> {
   }
 
   drain(): void {
-    for (const p of this.#warm) { try { p.kill(); } catch { /* already gone */ } }
+    for (const warm of this.#warm) { try { warm.kill(); } catch { /* already gone */ } }
     this.#warm = [];
     this.#key = null;
   }
@@ -66,9 +66,9 @@ export class ProcessPool<T extends Poolable> {
   #dropStale(): void {
     const cutoff = this.#opts.now() - this.#opts.maxAgeMs;
     const keep: T[] = [];
-    for (const p of this.#warm) {
-      if (p.isAlive() && p.spawnedAt > cutoff) keep.push(p);
-      else { try { p.kill(); } catch { /* already gone */ } }
+    for (const warm of this.#warm) {
+      if (warm.isAlive() && warm.spawnedAt > cutoff) keep.push(warm);
+      else { try { warm.kill(); } catch { /* already gone */ } }
     }
     this.#warm = keep;
   }
