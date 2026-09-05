@@ -88,10 +88,10 @@ const decoder = new MessageDecoder();
 process.stdin.on("data", chunk => {
   for (const message of decoder.push(chunk)) {
     if (!message.ok) {
+      // There is no id to answer: the frame carrying it is the unreadable one.
+      // The log is the only place this can be reported, which is why the log
+      // exists. A bad frame is stepped over; a stream out of step ends here.
       log("FRAME", message.error);
-      // Answered under id 0 so the extension sees something rather than a
-      // silent disconnect; a broken stream ends the session, a bad frame does not.
-      send(0, { ok: false, stage: "framing", error: message.error });
       if (message.fatal) { stdinClosed = true; maybeExit(); }
       continue;
     }

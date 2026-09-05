@@ -80,6 +80,17 @@ describe("install.sh", () => {
     expect(answer.ok).toBe(true);
   }, 15_000);
 
+  it("clears an older build rather than copying over the top", () => {
+    const home2 = mkdtempSync(join(tmpdir(), "sb-home-"));
+    const runDir = join(home2, "Library/Application Support/SenseBridge");
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, "stale.js"), "// from a previous build\n");
+    execFileSync("bash", [SCRIPT], { env: { ...process.env, HOME: home2 } });
+    // A file left from an earlier build looks exactly like a current one.
+    expect(existsSync(join(runDir, "stale.js"))).toBe(false);
+    expect(existsSync(join(runDir, "main.js"))).toBe(true);
+  });
+
   it("installs for the pinned extension id when none is given", () => {
     const home2 = mkdtempSync(join(tmpdir(), "sb-home-"));
     execFileSync("bash", [SCRIPT], { env: { ...process.env, HOME: home2 } });
