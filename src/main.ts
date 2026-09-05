@@ -9,7 +9,7 @@ import { ProcessPool } from "./pool.js";
 import { runOn, spawnCli, type CliProcess } from "./runner.js";
 import { log, LOG_PATH } from "./log.js";
 
-const POOL_SIZE = 2;
+const POOL_SIZE = Number(process.env.SENSEBRIDGE_POOL ?? 3);
 // An empty cwd keeps the CLI from discovering a CLAUDE.md on this machine.
 const WORK_DIR = mkdtempSync(join(tmpdir(), "sense-bridge-"));
 
