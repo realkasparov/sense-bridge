@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MessageDecoder } from "./framing.js";
@@ -12,6 +12,14 @@ import { log, LOG_PATH } from "./log.js";
 const POOL_SIZE = 2;
 // An empty cwd keeps the CLI from discovering a CLAUDE.md on this machine.
 const WORK_DIR = mkdtempSync(join(tmpdir(), "sense-bridge-"));
+
+// Chrome starts a host per connection, so without this every session would leave
+// a directory behind in the system temp folder for good.
+const cleanUp = () => { try { rmSync(WORK_DIR, { recursive: true, force: true }); } catch { /* going away anyway */ } };
+process.on("exit", cleanUp);
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+  process.on(signal, () => { cleanUp(); process.exit(0); });
+}
 const adapter = claudeAdapter;
 const cliPath = process.env.SENSEBRIDGE_CLI_PATH ?? adapter.detect();
 const fakeArgs = process.env.SENSEBRIDGE_FAKE_ARGS === "1";
@@ -28,6 +36,9 @@ const send = (id: number, payload: unknown) => {
 let pendingArgs: string[] = [];
 const pool = new ProcessPool<CliProcess>({
   size: POOL_SIZE,
+  // Idle CLI processes are not cheap and a page is usually finished within a
+  // minute; holding them for longer spends memory on nothing.
+  maxAgeMs: 60_000,
   spawnFn: () => spawnCli(cliPath!, pendingArgs, WORK_DIR),
 });
 
