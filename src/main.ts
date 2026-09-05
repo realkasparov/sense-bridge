@@ -10,6 +10,7 @@ import {
 import { ProcessPool } from "./pool.js";
 import { runOn, spawnCli, type CliProcess } from "./runner.js";
 import { log, LOG_PATH } from "./log.js";
+import { HOST_VERSION } from "./version.js";
 
 /** An unreadable value would silently switch prewarming off rather than fail. */
 const configuredPool = Number(process.env.SENSEBRIDGE_POOL);
@@ -67,8 +68,6 @@ const configKey = (req: WorkRequest) =>
   [req.type, req.model, req.effort, req.budgetUsd, req.targetLanguage,
    createHash("sha256").update(adapter.buildArgs(req).join("\u0000")).digest("hex").slice(0, 16)]
     .join("|");
-
-export const HOST_VERSION = "0.1.0";
 
 process.on("uncaughtException", error => {
   log("UNCAUGHT", String(error instanceof Error ? error.stack : error));
