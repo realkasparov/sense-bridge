@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MessageDecoder } from "./framing.js";
 import { chunkResponse, parseRequest, type WorkRequest } from "./protocol.js";
-import { claudeAdapter, isQuarantined, QUARANTINE_HINT } from "./providers/claude.js";
+import {
+  authFailureHint, claudeAdapter, isQuarantined, QUARANTINE_HINT,
+} from "./providers/claude.js";
 import { ProcessPool } from "./pool.js";
 import { runOn, spawnCli, type CliProcess } from "./runner.js";
 import { log, LOG_PATH } from "./log.js";
@@ -106,10 +108,14 @@ process.stdin.on("data", chunk => {
         // A run that failed with the CLI under quarantine almost always failed
         // for that reason, and the macOS dialog names neither this extension nor
         // a remedy.
+        // Being signed out is the likeliest first-run failure, so it is named
+        // before anything else that might also be true.
+        const signedOut = r.ok ? null : authFailureHint(
+          r.outcome?.apiErrorStatus ?? null, `${r.stderr} ${r.outcome?.text ?? ""}`);
         const quarantineHint = !r.ok && cliPath && isQuarantined(cliPath)
           ? QUARANTINE_HINT : undefined;
         send(req.id, {
-          ok: r.ok, stage: r.stage, wallMs: r.wallMs, hint: quarantineHint,
+          ok: r.ok, stage: r.stage, wallMs: r.wallMs, hint: signedOut ?? quarantineHint,
           result: r.outcome?.text ?? null, usage: r.outcome?.usage ?? null,
           costUsd: r.outcome?.costUsd ?? null,
           rateLimited: r.outcome?.rateLimited ?? false,

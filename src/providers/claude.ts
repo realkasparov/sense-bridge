@@ -115,6 +115,20 @@ export function isQuarantined(path: string): boolean {
   return result.status === 0 && result.stdout.trim() !== "";
 }
 
+/**
+ * A CLI that is installed but not signed in fails like any other error, and the
+ * message it prints says nothing about this extension. Naming the remedy is the
+ * difference between a puzzle and a one-line fix.
+ */
+export function authFailureHint(status: number | null, output: string): string | null {
+  const unauthorised = status === 401 || status === 403;
+  const wording = /\b(unauthor|not logged in|log in|authenticat|credential|api key|invalid token)/i
+    .test(output);
+  if (!unauthorised && !wording) return null;
+  return "The provider CLI is installed but not signed in. Run `claude` once in a terminal "
+    + "and complete the login, then try again.";
+}
+
 export const QUARANTINE_HINT =
   "macOS has the provider CLI under quarantine, so the native module it unpacks "
   + "at run time is blocked when Chrome is the parent process. Clear it with: "
