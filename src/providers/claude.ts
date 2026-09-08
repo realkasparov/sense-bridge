@@ -1,9 +1,10 @@
-import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { execFile, spawnSync } from "node:child_process";
+import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { TranslateRequest, WorkRequest } from "../protocol.js";
 import type { CliOutcome, ProviderAdapter } from "./types.js";
+import { firstUsable, type ProviderDescriptor } from "./registry.js";
 
 // Chrome hands the connector a minimal PATH, so the CLI is found by absolute path.
 const CANDIDATES = [
@@ -138,8 +139,7 @@ export const claudeAdapter: ProviderAdapter = {
   name: "claude",
 
   detect() {
-    for (const candidate of CANDIDATES) if (existsSync(candidate)) return candidate;
-    return null;
+    return firstUsable(CANDIDATES);
   },
 
   buildArgs(req) {
@@ -207,5 +207,23 @@ export const claudeAdapter: ProviderAdapter = {
       usage: event.usage ?? null,
       costUsd: typeof event.total_cost_usd === "number" ? event.total_cost_usd : null,
     } satisfies CliOutcome;
+  },
+};
+
+/**
+ * The model aliases are fixed and the extension already knows them, so only the
+ * version is worth asking for — and it is worth asking for out of band: this
+ * command takes over three seconds to answer.
+ */
+export const claudeDescriptor: ProviderDescriptor = {
+  id: "claude",
+  detect: () => claudeAdapter.detect(),
+  probe: async path => {
+    try {
+      const { stdout } = await promisify(execFile)(path, ["--version"], { timeout: 10_000 });
+      return { version: /(\d+\.\d+\.\d+)/.exec(stdout)?.[1] ?? null, models: [] };
+    } catch {
+      return { version: null, models: [] };
+    }
   },
 };

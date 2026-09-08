@@ -5,8 +5,10 @@ import { join } from "node:path";
 import { MessageDecoder } from "./framing.js";
 import { chunkResponse, parseRequest, type WorkRequest } from "./protocol.js";
 import {
-  authFailureHint, claudeAdapter, isQuarantined, QUARANTINE_HINT,
+  authFailureHint, claudeAdapter, claudeDescriptor, isQuarantined, QUARANTINE_HINT,
 } from "./providers/claude.js";
+import { ollamaDescriptor } from "./providers/ollama.js";
+import { detectProviders, probeProviders, type ProviderInfo } from "./providers/registry.js";
 import { ProcessPool } from "./pool.js";
 import { runOn, spawnCli, type CliProcess } from "./runner.js";
 import { log, LOG_PATH } from "./log.js";
@@ -27,6 +29,30 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
 }
 const adapter = claudeAdapter;
 const cliPath = process.env.SENSEBRIDGE_CLI_PATH ?? adapter.detect();
+
+// What the extension needs to fill its settings: everything installed, not just
+// the one provider that happens to serve requests today. Detection is cheap and
+// runs now; version and model lists cost seconds and arrive when they arrive, so
+// an early diag answers with what is known rather than waiting.
+const DESCRIPTORS = [claudeDescriptor, ollamaDescriptor];
+let providers: ProviderInfo[] = detectProviders(DESCRIPTORS);
+let probing = false;
+
+/**
+ * Answers now with what a filesystem check already knows, and starts the slow
+ * half in the background the first time anyone asks. Probing costs seconds —
+ * `claude --version` alone takes two — and doing it at boot spends them exactly
+ * when the first translation is waiting. Nothing needs the version to translate,
+ * so the second question to arrive gets the fuller answer and the first loses
+ * nothing.
+ */
+function knownProviders(): ProviderInfo[] {
+  if (!probing) {
+    probing = true;
+    void probeProviders(DESCRIPTORS, providers).then(filled => { providers = filled; });
+  }
+  return providers;
+}
 const fakeArgs = process.env.SENSEBRIDGE_FAKE_ARGS === "1";
 
 log(`CONNECTOR boot pid=${process.pid} ppid=${process.ppid} node=${process.version} cli=${cliPath}`);
@@ -122,7 +148,7 @@ process.stdin.on("data", chunk => {
       send(req.id, { ok: true, diag: {
         connector: CONNECTOR_VERSION,
         node: process.version, PATH: process.env.PATH ?? "(unset)",
-        HOME: process.env.HOME ?? "(unset)", cliPath, cwd: WORK_DIR,
+        HOME: process.env.HOME ?? "(unset)", cliPath, providers: knownProviders(), cwd: WORK_DIR,
         poolSize: pool.size(), log: LOG_PATH,
         quarantined: quarantined(),
       }});

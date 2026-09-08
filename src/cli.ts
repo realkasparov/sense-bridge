@@ -6,7 +6,9 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { claudeAdapter, isQuarantined } from "./providers/claude.js";
+import { claudeAdapter, claudeDescriptor, isQuarantined } from "./providers/claude.js";
+import { ollamaDescriptor } from "./providers/ollama.js";
+import { detectProviders } from "./providers/registry.js";
 import { CONNECTOR_VERSION } from "./version.js";
 
 /**
@@ -127,6 +129,8 @@ function doctor(): void {
     ["connector installed", existsSync(join(RUN_DIR, "main.js")) ? "yes" : "no"],
     ["manifest installed", existsSync(MANIFEST_PATH) ? MANIFEST_PATH : "no"],
     ["claude CLI", cliPath ?? "not found"],
+    ["providers found", detectProviders([claudeDescriptor, ollamaDescriptor])
+      .map(p => `${p.id} (${p.path})`).join(", ") || "none"],
     ["claude quarantined", cliPath ? String(isQuarantined(cliPath)) : "n/a"],
     ["Chrome running", chromeRunning ? "yes — restart it if you just installed" : "no"],
   ];

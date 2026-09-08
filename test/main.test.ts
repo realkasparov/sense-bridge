@@ -3,12 +3,12 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { encodeMessage, MessageDecoder } from "../src/framing.js";
 
-const MAIN = fileURLToPath(new URL("../src/main.ts", import.meta.url));
+const MAIN = fileURLToPath(new URL("../dist/main.js", import.meta.url));
 const FAKE = fileURLToPath(new URL("./fixtures/fake-cli.mjs", import.meta.url));
 
 function ask(message: unknown, env: Record<string, string> = {}): Promise<any[]> {
   return new Promise(resolve => {
-    const child = spawn("npx", ["tsx", MAIN], {
+    const child = spawn(process.execPath, [MAIN], {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, SENSEBRIDGE_CLI_PATH: FAKE, SENSEBRIDGE_FAKE_ARGS: "1",
              FAKE_MODE: "ok", ...env },
@@ -30,6 +30,15 @@ describe("host entry point", () => {
     const body = JSON.parse(res.body);
     expect(body.ok).toBe(true);
     expect(body.diag).toHaveProperty("PATH");
+
+    // The extension fills its provider list from this. An entry must always
+    // carry an id and a path, whatever machine the suite runs on.
+    expect(Array.isArray(body.diag.providers)).toBe(true);
+    for (const provider of body.diag.providers) {
+      expect(typeof provider.id).toBe("string");
+      expect(typeof provider.path).toBe("string");
+      expect(Array.isArray(provider.models)).toBe(true);
+    }
     expect(body.diag).toHaveProperty("cliPath");
   });
 
