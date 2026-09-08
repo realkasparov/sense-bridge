@@ -13,14 +13,6 @@ already installed and signed in on your machine, and sends the answer back.
 npx sense-bridge install
 ```
 
-or
-
-```bash
-brew tap realkasparov/sense-bridge
-brew install sense-bridge
-sense-bridge install
-```
-
 Then quit Chrome completely (⌘Q) and reopen it: host manifests are read only at startup.
 
 ## Commands
