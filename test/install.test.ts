@@ -11,7 +11,7 @@ let home: string;
 
 beforeAll(() => {
   home = mkdtempSync(join(tmpdir(), "sb-home-"));
-  const dist = fileURLToPath(new URL("../../dist/host", import.meta.url));
+  const dist = fileURLToPath(new URL("../../dist/connector", import.meta.url));
   mkdirSync(dist, { recursive: true });
   if (!existsSync(join(dist, "main.js"))) writeFileSync(join(dist, "main.js"), "// placeholder\n");
   execFileSync("bash", [SCRIPT, EXT_ID], { env: { ...process.env, HOME: home } });

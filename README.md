@@ -24,8 +24,8 @@ sense-bridge doctor                   report what is and is not in place
 sense-bridge --version
 ```
 
-`doctor` answers the questions worth asking when it does not work: whether the host and its
-manifest are in place, whether the CLI is installed, whether macOS has quarantined it, and
+`doctor` answers the questions worth asking when it does not work: whether the connector and
+its manifest are in place, whether the CLI is installed, whether macOS has quarantined it, and
 whether Chrome is still running from before the install.
 
 ## Requirements

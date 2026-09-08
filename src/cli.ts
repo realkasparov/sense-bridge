@@ -7,7 +7,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { claudeAdapter, isQuarantined } from "./providers/claude.js";
-import { HOST_VERSION } from "./version.js";
+import { CONNECTOR_VERSION } from "./version.js";
 
 /**
  * Registers the native messaging host with Chrome.
@@ -34,7 +34,7 @@ const distDir = dirname(fileURLToPath(import.meta.url));
  *
  * process.execPath resolves symlinks, and package managers keep the real binary
  * under a version directory — Homebrew's is Cellar/node/24.6.0, nvm's is
- * versions/node/v24.6.0. Recording that guarantees a host that stops working at
+ * versions/node/v24.6.0. Recording that guarantees a connector that stops working at
  * the next upgrade, so the stable name on PATH is preferred when it points at
  * this same Node.
  */
@@ -56,14 +56,14 @@ export function stableNodePath(
 
 function install(extensionId: string): void {
   if (!existsSync(join(distDir, "main.js"))) {
-    fail(`the host is not built: ${join(distDir, "main.js")} is missing`);
+    fail(`the connector is not built: ${join(distDir, "main.js")} is missing`);
   }
 
   // Chrome starts the wrapper with a minimal PATH, so it names node outright.
   const nodePath = stableNodePath();
   if (/\/v?\d+\.\d+\.\d+\//.test(nodePath)) {
     warn(`${nodePath} has a version in its path.`);
-    warn("Upgrading node will move it and the host will stop working.");
+    warn("Upgrading node will move it and the connector will stop working.");
     warn("Run this again after upgrading, or install node somewhere stable.");
   }
 
@@ -78,11 +78,11 @@ function install(extensionId: string): void {
   mkdirSync(RUN_DIR, { recursive: true });
   cpSync(distDir, RUN_DIR, { recursive: true });
 
-  // The host is ESM. Node 23 and later infer that from the syntax; older
+  // The connector is ESM. Node 23 and later infer that from the syntax; older
   // releases do not, and fail with a message about import statements.
   writeFileSync(join(RUN_DIR, "package.json"), '{ "type": "module" }\n');
 
-  const wrapper = join(RUN_DIR, "run-host.sh");
+  const wrapper = join(RUN_DIR, "run-connector.sh");
   writeFileSync(wrapper, [
     "#!/bin/bash",
     `echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) WRAPPER start pid=$$ ppid=$PPID" >> "${LOG_PATH}"`,
@@ -112,7 +112,7 @@ function install(extensionId: string): void {
 function uninstall(): void {
   rmSync(MANIFEST_PATH, { force: true });
   rmSync(RUN_DIR, { recursive: true, force: true });
-  console.log("removed the host and its manifest.");
+  console.log("removed the connector and its manifest.");
   console.log(`The log is left at ${LOG_PATH}; delete it yourself if you want it gone.`);
 }
 
@@ -122,9 +122,9 @@ function doctor(): void {
   const chromeRunning = spawnSync("/usr/bin/pgrep", ["-x", "Google Chrome"]).status === 0;
 
   const lines: Array<[string, string]> = [
-    ["host version", HOST_VERSION],
+    ["connector version", CONNECTOR_VERSION],
     ["node", `${process.version} at ${process.execPath}`],
-    ["host installed", existsSync(join(RUN_DIR, "main.js")) ? "yes" : "no"],
+    ["connector installed", existsSync(join(RUN_DIR, "main.js")) ? "yes" : "no"],
     ["manifest installed", existsSync(MANIFEST_PATH) ? MANIFEST_PATH : "no"],
     ["claude CLI", cliPath ?? "not found"],
     ["claude quarantined", cliPath ? String(isQuarantined(cliPath)) : "n/a"],
@@ -145,7 +145,7 @@ function fail(message: string): never {
 }
 
 function usage(): void {
-  console.log(`sense-bridge ${HOST_VERSION}
+  console.log(`sense-bridge ${CONNECTOR_VERSION}
 
   sense-bridge install [extension-id]   register the host with Chrome
   sense-bridge uninstall                remove it again
@@ -162,7 +162,7 @@ export function main(argv: string[]): void {
     case "install": install(argument ?? EXTENSION_ID); break;
     case "uninstall": uninstall(); break;
     case "doctor": doctor(); break;
-    case "--version": case "-v": console.log(HOST_VERSION); break;
+    case "--version": case "-v": console.log(CONNECTOR_VERSION); break;
     case undefined: case "--help": case "-h": usage(); break;
     default: fail(`unknown command: ${command}`);
   }

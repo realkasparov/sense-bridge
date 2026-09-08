@@ -34,7 +34,7 @@ describe("the compiled extension id", () => {
 
 describe("the published binary", () => {
   it("starts with a shebang so npm can run it", () => {
-    const built = resolve(process.cwd(), "dist/host/cli.js");
+    const built = resolve(process.cwd(), "dist/connector/cli.js");
     expect(readFileSync(built, "utf8").startsWith("#!/usr/bin/env node")).toBe(true);
   });
 });

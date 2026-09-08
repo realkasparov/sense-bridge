@@ -10,7 +10,7 @@ import {
 import { ProcessPool } from "./pool.js";
 import { runOn, spawnCli, type CliProcess } from "./runner.js";
 import { log, LOG_PATH } from "./log.js";
-import { HOST_VERSION } from "./version.js";
+import { CONNECTOR_VERSION } from "./version.js";
 
 /** An unreadable value would silently switch prewarming off rather than fail. */
 const configuredPool = Number(process.env.SENSEBRIDGE_POOL);
@@ -18,7 +18,7 @@ const POOL_SIZE = Number.isInteger(configuredPool) && configuredPool > 0 ? confi
 // An empty cwd keeps the CLI from discovering a CLAUDE.md on this machine.
 const WORK_DIR = mkdtempSync(join(tmpdir(), "sense-bridge-"));
 
-// Chrome starts a host per connection, so without this every session would leave
+// Chrome starts a connector per connection, so without this every session would leave
 // a directory behind in the system temp folder for good.
 const cleanUp = () => { try { rmSync(WORK_DIR, { recursive: true, force: true }); } catch { /* going away anyway */ } };
 process.on("exit", cleanUp);
@@ -29,7 +29,7 @@ const adapter = claudeAdapter;
 const cliPath = process.env.SENSEBRIDGE_CLI_PATH ?? adapter.detect();
 const fakeArgs = process.env.SENSEBRIDGE_FAKE_ARGS === "1";
 
-log(`HOST boot pid=${process.pid} ppid=${process.ppid} node=${process.version} cli=${cliPath}`);
+log(`CONNECTOR boot pid=${process.pid} ppid=${process.ppid} node=${process.version} cli=${cliPath}`);
 
 const send = (id: number, payload: unknown) => {
   for (const frame of chunkResponse(id, payload)) process.stdout.write(frame);
@@ -47,15 +47,15 @@ const pool = new ProcessPool<CliProcess>({
   spawnFn: () => spawnCli(cliPath!, pendingArgs, WORK_DIR),
 });
 
-// Warm processes must not outlive their usefulness: Chrome keeps the host alive
+// Warm processes must not outlive their usefulness: Chrome keeps the connector alive
 // for as long as the port is open, and idle CLI processes are not cheap.
-// unref so the reaper never keeps the host from exiting.
+// unref so the reaper never keeps the connector from exiting.
 setInterval(() => pool.reap(), 30_000).unref();
 
 /**
  * Asked once. isQuarantined shells out to xattr, and doing that on every failed
  * run blocks the event loop while three lanes are in flight — for an answer that
- * cannot change while the host is alive.
+ * cannot change while the connector is alive.
  */
 let quarantineAnswer: boolean | null = null;
 const quarantined = (): boolean | null => {
@@ -75,7 +75,7 @@ process.on("uncaughtException", error => {
 });
 
 // Without this a rejected promise ends the process with nothing written down,
-// and the log is the only place anything about this host can be reported.
+// and the log is the only place anything about this connector can be reported.
 process.on("unhandledRejection", reason => {
   log("UNHANDLED", String(reason instanceof Error ? reason.stack : reason));
 });
@@ -120,7 +120,7 @@ process.stdin.on("data", chunk => {
     const req = parsed.value;
     if (req.type === "diag") {
       send(req.id, { ok: true, diag: {
-        host: HOST_VERSION,
+        connector: CONNECTOR_VERSION,
         node: process.version, PATH: process.env.PATH ?? "(unset)",
         HOME: process.env.HOME ?? "(unset)", cliPath, cwd: WORK_DIR,
         poolSize: pool.size(), log: LOG_PATH,
@@ -131,7 +131,7 @@ process.stdin.on("data", chunk => {
 
     if (!cliPath) {
       send(req.id, { ok: false, stage: "resolve", error: "provider CLI not found",
-                     hint: "Chrome gives the host a minimal PATH; an absolute path is required." });
+                     hint: "Chrome gives the connector a minimal PATH; an absolute path is required." });
       continue;
     }
 
@@ -139,7 +139,7 @@ process.stdin.on("data", chunk => {
     try {
       dispatch(req);
     } catch (error) {
-      // Without this the counter never comes back down and the host outlives
+      // Without this the counter never comes back down and the connector outlives
       // the connection, waiting for work that already failed.
       inFlight--;
       log("DISPATCH", String(error));

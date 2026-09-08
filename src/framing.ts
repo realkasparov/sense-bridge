@@ -48,7 +48,7 @@ export class MessageDecoder {
         out.push({ ok: true, value: JSON.parse(body) });
       } catch (error) {
         // One unreadable frame is answered and stepped over. Throwing here took
-        // the host down and left everything queued behind it unanswered too.
+        // the connector down and left everything queued behind it unanswered too.
         out.push({ ok: false, fatal: false, error: `frame is not JSON: ${String(error)}` });
       }
     }

@@ -33,7 +33,7 @@ export interface CliProcess {
 export function spawnCli(cliPath: string, args: string[], cwd: string): CliProcess {
   const child = spawn(cliPath, args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
   // Without listeners an ENOENT or EPIPE becomes an uncaught exception and takes
-  // the whole host down. runOn replaces these with handlers that report.
+  // the whole connector down. runOn replaces these with handlers that report.
   child.on("error", () => {});
   child.stdin.on("error", () => {});
   return {

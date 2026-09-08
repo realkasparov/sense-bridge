@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { TranslateRequest, WorkRequest } from "../protocol.js";
 import type { CliOutcome, ProviderAdapter } from "./types.js";
 
-// Chrome hands the host a minimal PATH, so the CLI is found by absolute path.
+// Chrome hands the connector a minimal PATH, so the CLI is found by absolute path.
 const CANDIDATES = [
   "/opt/homebrew/bin/claude",
   "/usr/local/bin/claude",

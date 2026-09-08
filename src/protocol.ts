@@ -150,7 +150,7 @@ export function parseRequest(raw: unknown): ParseResult {
   };
 }
 
-/** Chrome rejects host to extension messages above 1 MB, so large payloads ship in frames. */
+/** Chrome rejects connector to extension messages above 1 MB, so large payloads ship in frames. */
 export const MAX_FRAME_BYTES = 900_000;
 
 /**
