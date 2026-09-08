@@ -41,6 +41,26 @@ growing with every batch.
 
 It never reads or stores credentials. The CLI authenticates on its own.
 
+## Development
+
+```bash
+npm install
+npm test        # no network, no tokens spent
+npm run build
+./install/install.sh    # register this build with Chrome
+```
+
+The suite runs against a fake CLI, so it is free and offline. `npm run test:smoke` makes one
+real request and costs tokens.
+
+Contributions are welcome under a CLA — see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## The other half
+
+The browser extension is a separate program under its own terms, and is not open source.
+This repository is where the connector is developed; bugs in the extension itself belong on
+its own tracker, not here.
+
 ## Licence
 
-Apache-2.0. The browser extension it serves is a separate program under its own terms.
+Apache-2.0. See [LICENSE](LICENSE).

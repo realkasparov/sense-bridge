@@ -5,13 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SCRIPT = fileURLToPath(new URL("../../install/install.sh", import.meta.url));
+const SCRIPT = fileURLToPath(new URL("../install/install.sh", import.meta.url));
 const EXT_ID = "abcdefghijklmnopabcdefghijklmnop";
 let home: string;
 
 beforeAll(() => {
   home = mkdtempSync(join(tmpdir(), "sb-home-"));
-  const dist = fileURLToPath(new URL("../../dist/connector", import.meta.url));
+  const dist = fileURLToPath(new URL("../dist", import.meta.url));
   mkdirSync(dist, { recursive: true });
   if (!existsSync(join(dist, "main.js"))) writeFileSync(join(dist, "main.js"), "// placeholder\n");
   execFileSync("bash", [SCRIPT, EXT_ID], { env: { ...process.env, HOME: home } });

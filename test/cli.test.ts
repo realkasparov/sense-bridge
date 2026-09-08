@@ -23,18 +23,23 @@ describe("stableNodePath", () => {
 });
 
 describe("the compiled extension id", () => {
-  it("matches the one the extension declares", () => {
-    // Two copies of an id that must agree; a mismatch registers the host for an
-    // extension that does not exist.
-    const declared = readFileSync(
-      resolve(process.cwd(), "extension/src/extension-id.ts"), "utf8");
-    expect(declared).toContain(EXTENSION_ID);
+  it("is the id the published extension is signed with", () => {
+    // The extension declares the same literal in its own repository and asserts
+    // it there. A mismatch registers the connector for an extension that does
+    // not exist, and the port dies on connect; since the two halves no longer
+    // share a checkout, each side can only guard its own copy.
+    expect(EXTENSION_ID).toBe("iclikaioedganbbkoepocenoneobkofb");
+  });
+
+  it("is a well-formed Chrome extension id", () => {
+    // 32 characters, a-p: Chrome's base-16 alphabet shifted into letters.
+    expect(EXTENSION_ID).toMatch(/^[a-p]{32}$/);
   });
 });
 
 describe("the published binary", () => {
   it("starts with a shebang so npm can run it", () => {
-    const built = resolve(process.cwd(), "dist/connector/cli.js");
+    const built = resolve(process.cwd(), "dist/cli.js");
     expect(readFileSync(built, "utf8").startsWith("#!/usr/bin/env node")).toBe(true);
   });
 });

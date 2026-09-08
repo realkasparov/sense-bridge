@@ -1,0 +1,55 @@
+{
+  "name": "sense-bridge",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Native messaging connector for the SenseBridge browser extension: connects it to the Claude Code CLI already installed on your machine.",
+  "license": "Apache-2.0",
+  "author": "Aleksandr Novikov",
+  "homepage": "https://sense-bridge.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/realkasparov/sense-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/realkasparov/sense-bridge/issues"
+  },
+  "keywords": [
+    "chrome-extension",
+    "native-messaging",
+    "translation",
+    "claude",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "os": [
+    "darwin"
+  ],
+  "bin": {
+    "sense-bridge": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "tsconfig.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:smoke": "SENSEBRIDGE_SMOKE=1 vitest run test/smoke.real.test.ts",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
