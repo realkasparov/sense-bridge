@@ -39,10 +39,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:smoke": "SENSEBRIDGE_SMOKE=1 vitest run test/smoke.real.test.ts",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm test"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

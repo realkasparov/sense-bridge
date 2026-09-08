@@ -9,11 +9,23 @@ already installed and signed in on your machine, and sends the answer back.
 
 ## Install
 
+Not published to npm yet. Until it is, install from this repository:
+
+```bash
+git clone https://github.com/realkasparov/sense-bridge.git
+cd sense-bridge
+npm install && npm run build
+./install/install.sh
+```
+
+Once published, that becomes:
+
 ```bash
 npx sense-bridge install
 ```
 
-Then quit Chrome completely (⌘Q) and reopen it: host manifests are read only at startup.
+Either way, then quit Chrome completely (⌘Q) and reopen it: host manifests are read only at
+startup. This is the single most common reason a fresh install appears not to work.
 
 ## Commands
 
@@ -45,8 +57,7 @@ It never reads or stores credentials. The CLI authenticates on its own.
 
 ```bash
 npm install
-npm test        # no network, no tokens spent
-npm run build
+npm test        # builds first; no network, no tokens spent
 ./install/install.sh    # register this build with Chrome
 ```
 
@@ -58,8 +69,9 @@ Contributions are welcome under a CLA — see [CONTRIBUTING.md](CONTRIBUTING.md)
 ## The other half
 
 The browser extension is a separate program under its own terms, and is not open source.
-This repository is where the connector is developed; bugs in the extension itself belong on
-its own tracker, not here.
+Its repository is private and has no public issue tracker, so until there is somewhere
+better, report problems with the extension **here** as well — they will be passed on. Say
+which half you mean and the triage costs nobody anything.
 
 ## Licence
 

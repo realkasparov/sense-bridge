@@ -1,10 +1,10 @@
 # Contributing to the SenseBridge connector
 
-This repository is Apache-2.0. The browser extension it serves lives elsewhere and is
-proprietary and closed to contributions; issues about the extension belong there, not
-here.
+This repository is Apache-2.0. The browser extension it serves lives elsewhere, is
+proprietary, and is closed to code contributions.
 
-Issues and pull requests are welcome.
+Issues and pull requests are welcome here. Bug reports about the extension are welcome
+here too: its repository is private, so this is the only tracker either half has.
 
 ## Contributor License Agreement
 
