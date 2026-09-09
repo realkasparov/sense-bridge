@@ -139,7 +139,7 @@ export const claudeAdapter: ProviderAdapter = {
   name: "claude",
 
   detect() {
-    return firstUsable(CANDIDATES) ?? onPath("claude");
+    return firstUsable(CANDIDATES);
   },
 
   buildArgs(req) {
@@ -218,6 +218,7 @@ export const claudeAdapter: ProviderAdapter = {
 export const claudeDescriptor: ProviderDescriptor = {
   id: "claude",
   detect: () => claudeAdapter.detect(),
+  locate: () => onPath("claude"),
   probe: async path => {
     try {
       const { stdout } = await promisify(execFile)(path, ["--version"], { timeout: 15_000 });

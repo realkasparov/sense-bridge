@@ -55,7 +55,11 @@ export function parseModelList(output: string): ProviderModel[] {
 }
 
 export function detect(): string | null {
-  return firstUsable(CANDIDATES) ?? onPath("ollama");
+  return firstUsable(CANDIDATES);
+}
+
+export function locate(): Promise<string | null> {
+  return onPath("ollama");
 }
 
 /**
@@ -77,4 +81,4 @@ export async function probe(path: string): Promise<ProviderProbe> {
   };
 }
 
-export const ollamaDescriptor: ProviderDescriptor = { id: "ollama", detect, probe };
+export const ollamaDescriptor: ProviderDescriptor = { id: "ollama", detect, locate, probe };

@@ -1,5 +1,6 @@
-import { spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
+import { promisify } from "node:util";
 
 export interface ProviderModel {
   id: string;
@@ -35,8 +36,13 @@ export interface ProviderProbe {
 
 export interface ProviderDescriptor {
   id: string;
-  /** Absolute path to the CLI, or null when it is not installed. */
+  /** Filesystem only. Cheap enough to run on every request, and it must stay so. */
   detect(): string | null;
+  /**
+   * Where the user's own shell would find it, for installs no fixed list can
+   * predict. Spawns a login shell, so it runs only in the background pass.
+   */
+  locate?(): Promise<string | null>;
   /** Costs a subprocess, so it is never on the path of a request. */
   probe?(path: string): Promise<ProviderProbe>;
 }
@@ -61,7 +67,7 @@ export function firstUsable(candidates: readonly string[]): string | null {
   return null;
 }
 
-const shellLookups = new Map<string, string | null>();
+const shellLookups = new Map<string, Promise<string | null>>();
 
 /**
  * Where a login shell would find a command.
@@ -71,23 +77,24 @@ const shellLookups = new Map<string, string | null>();
  * path changes under the user. Chrome hands the connector a minimal PATH, so
  * asking the user's own shell is the only way to see what they see.
  *
- * Memoised: this spawns a login shell, which reads their profile, and the answer
- * cannot change while the connector is alive.
+ * Asynchronous and memoised, and never called from `detect`. A login shell reads
+ * the user's profile, which is somebody else's code of unknown length; doing
+ * that synchronously would stop the connector answering, and doing it in
+ * `detect` would charge everyone who has *not* installed a provider the full
+ * price of finding that out, on every start.
  */
-export function onPath(name: string): string | null {
-  if (shellLookups.has(name)) return shellLookups.get(name) ?? null;
-  let found: string | null = null;
+export function onPath(name: string): Promise<string | null> {
+  const cached = shellLookups.get(name);
+  if (cached) return cached;
   // The names are literals in this repository, never input. Refusing anything
   // else keeps it that way rather than trusting that it stays true.
-  if (/^[a-z0-9_-]+$/i.test(name)) {
-    try {
-      const out = spawnSync("/bin/sh", ["-lc", `command -v ${name}`],
-        { encoding: "utf8", timeout: 3000 }).stdout?.trim();
-      found = out ? firstUsable(out.split("\n")) : null;
-    } catch { /* no shell, no profile, no answer */ }
-  }
-  shellLookups.set(name, found);
-  return found;
+  const lookup = !/^[a-z0-9_-]+$/i.test(name)
+    ? Promise.resolve(null)
+    : promisify(execFile)("/bin/sh", ["-lc", `command -v ${name}`], { timeout: 5000 })
+        .then(({ stdout }) => firstUsable(stdout.trim().split("\n")))
+        .catch(() => null);
+  shellLookups.set(name, lookup);
+  return lookup;
 }
 
 /** The first version-shaped number in a CLI's output, which is where they all hide it. */
@@ -108,16 +115,30 @@ export function detectProviders(providers: readonly ProviderDescriptor[]): Provi
 }
 
 /**
- * Fills in what detection deliberately left out.
+ * Fills in what detection deliberately left out, and finds what it could not
+ * afford to look for.
  *
- * Every probe runs at once and none of them can hold the rest up, because the
- * slowest decides how long the settings page shows an incomplete list.
+ * Everything here runs at once and nothing can hold the rest up, because the
+ * slowest step decides how long the settings page shows an incomplete list.
  */
 export async function probeProviders(
   providers: readonly ProviderDescriptor[], found: readonly ProviderInfo[],
 ): Promise<ProviderInfo[]> {
   const byId = new Map(providers.map(p => [p.id, p]));
-  return Promise.all(found.map(async info => {
+  const seen = new Set(found.map(info => info.id));
+
+  // A provider the cheap pass missed may still be installed somewhere only the
+  // user's shell knows about. This is where that costs nothing anyone waits for.
+  const late = await Promise.all(providers
+    .filter(provider => !seen.has(provider.id) && provider.locate)
+    .map(async provider => {
+      const path = await provider.locate!().catch(() => null);
+      return path === null ? null
+        : { id: provider.id, path, version: null, models: [], hint: null } satisfies ProviderInfo;
+    }));
+
+  const all = [...found, ...late.filter(info => info !== null)];
+  return Promise.all(all.map(async info => {
     const probe = byId.get(info.id)?.probe;
     if (!probe) return info;
     try {

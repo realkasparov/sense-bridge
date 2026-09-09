@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { claudeAdapter, claudeDescriptor, isQuarantined } from "./providers/claude.js";
 import { ollamaDescriptor } from "./providers/ollama.js";
-import { detectProviders } from "./providers/registry.js";
+import { detectProviders, probeProviders } from "./providers/registry.js";
 import { CONNECTOR_VERSION } from "./version.js";
 
 /**
@@ -119,7 +119,7 @@ function uninstall(): void {
 }
 
 /** Answers the questions asked whenever this does not work. */
-function doctor(): void {
+async function doctor(): Promise<void> {
   const cliPath = claudeAdapter.detect();
   const chromeRunning = spawnSync("/usr/bin/pgrep", ["-x", "Google Chrome"]).status === 0;
 
@@ -128,16 +128,31 @@ function doctor(): void {
     ["node", `${process.version} at ${process.execPath}`],
     ["connector installed", existsSync(join(RUN_DIR, "main.js")) ? "yes" : "no"],
     ["manifest installed", existsSync(MANIFEST_PATH) ? MANIFEST_PATH : "no"],
-    ["claude CLI", cliPath ?? "not found"],
-    ["providers found", detectProviders([claudeDescriptor, ollamaDescriptor])
-      .map(p => `${p.id} (${p.path})`).join(", ") || "none"],
     ["claude quarantined", cliPath ? String(isQuarantined(cliPath)) : "n/a"],
     ["Chrome running", chromeRunning ? "yes — restart it if you just installed" : "no"],
   ];
   for (const [label, value] of lines) console.log(`  ${label.padEnd(20)} ${value}`);
 
+  // The full pass, not the cheap one: this command is run precisely when
+  // something does not work, so it is the wrong place to withhold the part that
+  // says what to do about it.
+  const descriptors = [claudeDescriptor, ollamaDescriptor];
+  const providers = await probeProviders(descriptors, detectProviders(descriptors));
+  console.log("\n  providers");
+  if (providers.length === 0) {
+    console.log("    none found. Install a provider CLI and sign in to it.");
+  }
+  for (const provider of providers) {
+    const version = provider.version ? ` ${provider.version}` : "";
+    console.log(`    ${provider.id}${version} at ${provider.path}`);
+    for (const model of provider.models) {
+      console.log(`      ${model.id}${model.size ? ` (${model.size})` : ""}`);
+    }
+    if (provider.hint) console.log(`      ${provider.hint}`);
+  }
+
   if (!existsSync(MANIFEST_PATH)) {
-    console.log("\nRun `sense-bridge install` to register the host with Chrome.");
+    console.log("\nRun `sense-bridge install` to register the connector with Chrome.");
   }
 }
 
@@ -165,7 +180,7 @@ export function main(argv: string[]): void {
   switch (command) {
     case "install": install(argument ?? EXTENSION_ID); break;
     case "uninstall": uninstall(); break;
-    case "doctor": doctor(); break;
+    case "doctor": void doctor(); break;
     case "--version": case "-v": console.log(CONNECTOR_VERSION); break;
     case undefined: case "--help": case "-h": usage(); break;
     default: fail(`unknown command: ${command}`);

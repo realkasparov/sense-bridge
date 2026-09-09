@@ -95,6 +95,29 @@ describe("probeProviders", () => {
     expect(filled).toMatchObject([{ id: "claude", path: real, version: null }]);
   });
 
+  it("finds a provider the cheap pass could not afford to look for", async () => {
+    // nvm's path carries the node version in it, so no fixed list can name it.
+    // The shell knows; asking costs a login shell, which is why it happens here
+    // and not in detect.
+    const hidden: ProviderDescriptor = {
+      id: "claude", detect: () => null, locate: async () => real,
+      probe: async () => ({ version: "2.1.236", models: [], hint: null }),
+    };
+    const filled = await probeProviders([hidden], detectProviders([hidden]));
+    expect(filled).toMatchObject([{ id: "claude", path: real, version: "2.1.236" }]);
+  });
+
+  it("does not look twice for a provider the cheap pass already found", async () => {
+    let located = 0;
+    const both: ProviderDescriptor = {
+      id: "claude", detect: () => real,
+      locate: async () => { located++; return real; },
+    };
+    const filled = await probeProviders([both], detectProviders([both]));
+    expect(located).toBe(0);
+    expect(filled).toHaveLength(1);
+  });
+
   it("leaves a provider that cannot be probed alone", async () => {
     const filled = await probeProviders([stub("claude", real)], detectProviders([stub("claude", real)]));
     expect(filled[0]).toMatchObject({ version: null, models: [] });
@@ -102,21 +125,28 @@ describe("probeProviders", () => {
 });
 
 describe("onPath", () => {
-  it("finds a command a login shell can see", () => {
+  it("finds a command a login shell can see", async () => {
     // A fixed list of directories cannot cover a version manager: nvm puts a
     // global npm install under a path with the node version in it, and Chrome
     // hands the connector a minimal PATH, so the user's shell is the only place
     // that knows where their own tools are.
-    expect(onPath("sh")).not.toBeNull();
+    expect(await onPath("sh")).not.toBeNull();
   });
 
-  it("returns null for something that is not installed", () => {
-    expect(onPath("definitely-not-a-real-command-xyz")).toBeNull();
+  it("returns null for something that is not installed", async () => {
+    expect(await onPath("definitely-not-a-real-command-xyz")).toBeNull();
   });
 
-  it("refuses a name that is not a plain command name", () => {
+  it("is never called from detect, so it never blocks a request", () => {
+    // The point of splitting it out: everyone who has *not* installed a
+    // provider would otherwise pay a login shell to find that out, on every
+    // start, before the connector could answer anything.
+    expect(onPath("sh")).toBeInstanceOf(Promise);
+  });
+
+  it("refuses a name that is not a plain command name", async () => {
     // The names are literals in this repository. Refusing anything else keeps a
     // shell string from ever being built out of something that is not one.
-    expect(onPath("sh; touch /tmp/sb-injected")).toBeNull();
+    expect(await onPath("sh; touch /tmp/sb-injected")).toBeNull();
   });
 });

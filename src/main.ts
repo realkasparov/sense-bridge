@@ -36,20 +36,27 @@ const cliPath = process.env.SENSEBRIDGE_CLI_PATH ?? adapter.detect();
 // an early diag answers with what is known rather than waiting.
 const DESCRIPTORS = [claudeDescriptor, ollamaDescriptor];
 let providers: ProviderInfo[] = detectProviders(DESCRIPTORS);
-let probing = false;
+let probedAt = 0;
+let probeInFlight = false;
+
+/** Long enough that reopening a page costs nothing; short enough to notice a fix. */
+const PROBE_FRESH_MS = 10_000;
 
 /**
- * Answers now with what a filesystem check already knows, and starts the slow
- * half in the background the first time anyone asks. Probing costs seconds —
- * `claude --version` alone takes two — and doing it at boot spends them exactly
- * when the first translation is waiting. Nothing needs the version to translate,
- * so the second question to arrive gets the fuller answer and the first loses
- * nothing.
+ * Answers now with what a filesystem check already knows, and refreshes the slow
+ * half behind the answer.
+ *
+ * Probing costs seconds, so it cannot be on the path of a reply. But it must not
+ * happen only once either: a provider's hint says things like "start Ollama",
+ * and someone who does that and comes back would otherwise be told again,
+ * forever, that it is not running — the remedy for a dead end turned into one.
  */
 function knownProviders(): ProviderInfo[] {
-  if (!probing) {
-    probing = true;
-    void probeProviders(DESCRIPTORS, providers).then(filled => { providers = filled; });
+  if (!probeInFlight && Date.now() - probedAt > PROBE_FRESH_MS) {
+    probeInFlight = true;
+    void probeProviders(DESCRIPTORS, detectProviders(DESCRIPTORS))
+      .then(filled => { providers = filled; })
+      .finally(() => { probeInFlight = false; probedAt = Date.now(); });
   }
   return providers;
 }
