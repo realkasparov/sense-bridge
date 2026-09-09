@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { TranslateRequest, WorkRequest } from "../protocol.js";
 import type { CliOutcome, ProviderAdapter } from "./types.js";
-import { firstUsable, type ProviderDescriptor } from "./registry.js";
+import { firstSemver, firstUsable, onPath, type ProviderDescriptor } from "./registry.js";
 
 // Chrome hands the connector a minimal PATH, so the CLI is found by absolute path.
 const CANDIDATES = [
@@ -139,7 +139,7 @@ export const claudeAdapter: ProviderAdapter = {
   name: "claude",
 
   detect() {
-    return firstUsable(CANDIDATES);
+    return firstUsable(CANDIDATES) ?? onPath("claude");
   },
 
   buildArgs(req) {
@@ -212,18 +212,18 @@ export const claudeAdapter: ProviderAdapter = {
 
 /**
  * The model aliases are fixed and the extension already knows them, so only the
- * version is worth asking for — and it is worth asking for out of band: this
- * command takes over three seconds to answer.
+ * version is worth asking for — and it is worth asking out of band: piped, which
+ * is the only way the connector ever runs it, this takes about two seconds.
  */
 export const claudeDescriptor: ProviderDescriptor = {
   id: "claude",
   detect: () => claudeAdapter.detect(),
   probe: async path => {
     try {
-      const { stdout } = await promisify(execFile)(path, ["--version"], { timeout: 10_000 });
-      return { version: /(\d+\.\d+\.\d+)/.exec(stdout)?.[1] ?? null, models: [] };
+      const { stdout } = await promisify(execFile)(path, ["--version"], { timeout: 15_000 });
+      return { version: firstSemver(stdout), models: [], hint: null };
     } catch {
-      return { version: null, models: [] };
+      return { version: null, models: [], hint: null };
     }
   },
 };

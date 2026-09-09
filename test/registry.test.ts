@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, symlinkSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { detectProviders, firstUsable, probeProviders } from "../src/providers/registry.js";
+import { detectProviders, firstUsable, onPath, probeProviders } from "../src/providers/registry.js";
 import type { ProviderDescriptor } from "../src/providers/registry.js";
 
 let dir: string;
@@ -69,7 +69,7 @@ describe("detectProviders", () => {
     // Probing costs seconds — `claude --version` alone takes over three. The
     // settings page must be able to list a provider without waiting for that.
     const [only] = detectProviders([stub("claude", real)]);
-    expect(only).toMatchObject({ version: null, models: [] });
+    expect(only).toMatchObject({ version: null, models: [], hint: null });
   });
 });
 
@@ -77,10 +77,11 @@ describe("probeProviders", () => {
   it("fills in what detection left out", async () => {
     const probing: ProviderDescriptor = {
       id: "ollama", detect: () => real,
-      probe: async () => ({ version: "0.30.10", models: ["llama3.2:latest"] }),
+      probe: async () => ({ version: "0.30.10", models: [{ id: "llama3.2:latest", size: "2.0 GB" }], hint: null }),
     };
     const filled = await probeProviders([probing], detectProviders([probing]));
-    expect(filled[0]).toMatchObject({ version: "0.30.10", models: ["llama3.2:latest"] });
+    expect(filled[0]).toMatchObject({ version: "0.30.10" });
+    expect(filled[0]!.models).toEqual([{ id: "llama3.2:latest", size: "2.0 GB" }]);
   });
 
   it("keeps a provider whose probe throws", async () => {
@@ -97,5 +98,25 @@ describe("probeProviders", () => {
   it("leaves a provider that cannot be probed alone", async () => {
     const filled = await probeProviders([stub("claude", real)], detectProviders([stub("claude", real)]));
     expect(filled[0]).toMatchObject({ version: null, models: [] });
+  });
+});
+
+describe("onPath", () => {
+  it("finds a command a login shell can see", () => {
+    // A fixed list of directories cannot cover a version manager: nvm puts a
+    // global npm install under a path with the node version in it, and Chrome
+    // hands the connector a minimal PATH, so the user's shell is the only place
+    // that knows where their own tools are.
+    expect(onPath("sh")).not.toBeNull();
+  });
+
+  it("returns null for something that is not installed", () => {
+    expect(onPath("definitely-not-a-real-command-xyz")).toBeNull();
+  });
+
+  it("refuses a name that is not a plain command name", () => {
+    // The names are literals in this repository. Refusing anything else keeps a
+    // shell string from ever being built out of something that is not one.
+    expect(onPath("sh; touch /tmp/sb-injected")).toBeNull();
   });
 });
