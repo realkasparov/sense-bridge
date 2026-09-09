@@ -166,7 +166,7 @@ function fail(message: string): never {
 function usage(): void {
   console.log(`sense-bridge ${CONNECTOR_VERSION}
 
-  sense-bridge install [extension-id]   register the host with Chrome
+  sense-bridge install [extension-id]   register the connector with Chrome
   sense-bridge uninstall                remove it again
   sense-bridge doctor                   report what is and is not in place
   sense-bridge --version                print the version
@@ -180,7 +180,7 @@ export function main(argv: string[]): void {
   switch (command) {
     case "install": install(argument ?? EXTENSION_ID); break;
     case "uninstall": uninstall(); break;
-    case "doctor": void doctor(); break;
+    case "doctor": void doctor().catch(e => fail(String(e))); break;
     case "--version": case "-v": console.log(CONNECTOR_VERSION); break;
     case undefined: case "--help": case "-h": usage(); break;
     default: fail(`unknown command: ${command}`);

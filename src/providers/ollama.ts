@@ -1,13 +1,9 @@
-import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import {
-  firstSemver, firstUsable, onPath,
+  firstUsable, onPath,
   type ProviderDescriptor, type ProviderModel, type ProviderProbe,
 } from "./registry.js";
-
-const run = promisify(execFile);
 
 /** Chrome hands the connector a minimal PATH, so the CLI is found by absolute path. */
 const CANDIDATES = [
@@ -17,41 +13,53 @@ const CANDIDATES = [
 ];
 
 export const NOT_RUNNING_HINT =
-  "Ollama is installed but not answering. Start it — open the Ollama app, or run "
+  "Ollama is installed but not running. Start it — open the Ollama app, or run "
   + "`ollama serve` — then reopen this page.";
 
 export const NO_MODELS_HINT =
   "Ollama is running but has no model that can translate. Pull one, for example "
   + "`ollama pull qwen2.5:7b`.";
 
+/** Where the daemon listens. OLLAMA_HOST is how the user moves it. */
+export function apiBase(host = process.env.OLLAMA_HOST): string {
+  if (!host) return "http://127.0.0.1:11434";
+  return /^https?:\/\//.test(host) ? host.replace(/\/$/, "") : `http://${host}`;
+}
+
+interface TagsModel {
+  name?: unknown;
+  details?: { parameter_size?: unknown } | null;
+  capabilities?: unknown;
+}
+
 /**
- * Model names and sizes out of `ollama list`.
+ * Models out of `GET /api/tags`, keeping only those that can produce text.
  *
- * The size comes along because it is the only honest signal available about
- * whether a local model can do this job at all. A 2 GB model translates roughly
- * the way a 2 GB model translates, and someone choosing between what they happen
- * to have pulled deserves to see the difference before the page comes back
- * wrong.
+ * `capabilities` is the daemon's own answer, which is why it is used instead of
+ * the model's name. Embedding models reply with vectors, so a page translated by
+ * one fails in a way nothing downstream can tell apart from a refusal — and
+ * guessing from the name misses every one that is not called "embed", such as
+ * bge-m3.
  *
- * Embedding models are dropped. They sit in the listing looking like an ordinary
- * choice and answer with vectors instead of text, so a page translated by one
- * fails in a way nothing downstream can tell apart from a refusal.
+ * The parameter count comes along because it is the only honest signal available
+ * about whether a local model can do this job at all. Someone choosing between
+ * whatever they happen to have pulled should see 3.2B next to 8.2B before the
+ * page comes back wrong, not after.
  */
-export function parseModelList(output: string): ProviderModel[] {
-  const models: ProviderModel[] = [];
-  for (const line of output.split("\n")) {
-    const [name, , amount, unit] = line.trim().split(/\s+/);
-    if (!name || name === "NAME") continue;
-    // A model name is `[namespace/]name:tag`, and the tag is never empty. An
-    // error line ends at the colon — "Error: could not connect" would otherwise
-    // be listed as a model called "Error:" and offered to the user.
-    if (!/^[^\s:/]+(?:\/[^\s:/]+)*:[^\s:]+$/.test(name)) continue;
-    if (/embed/i.test(name)) continue;
-    const size = /^[\d.]+$/.test(amount ?? "") && /^[A-Z]B$/i.test(unit ?? "")
-      ? `${amount} ${unit}` : null;
-    models.push({ id: name, size });
+export function parseTags(body: unknown): ProviderModel[] {
+  const models = (body as { models?: unknown } | null)?.models;
+  if (!Array.isArray(models)) return [];
+  const usable: ProviderModel[] = [];
+  for (const entry of models as TagsModel[]) {
+    if (typeof entry?.name !== "string") continue;
+    const capabilities = Array.isArray(entry.capabilities) ? entry.capabilities : [];
+    // No capabilities listed at all means an older daemon that does not report
+    // them; excluding those would hide every model on it.
+    if (capabilities.length > 0 && !capabilities.includes("completion")) continue;
+    const size = entry.details?.parameter_size;
+    usable.push({ id: entry.name, size: typeof size === "string" ? size : null });
   }
-  return models.sort((a, b) => a.id.localeCompare(b.id));
+  return usable.sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export function detect(): string | null {
@@ -63,22 +71,39 @@ export function locate(): Promise<string | null> {
 }
 
 /**
- * `ollama list` talks to the server, so its exit status is how an installed
- * binary with nothing running behind it stops looking usable. `--version`
- * answers either way, which is why the two are asked separately: the version is
- * still worth reporting for a provider that cannot currently be used.
+ * Asks the daemon over HTTP rather than running `ollama list`.
+ *
+ * The CLI spends five seconds trying to start a server that is not there —
+ * measured — so opening the settings page would try to launch a background
+ * service on the user's machine. A refused connection answers the same question
+ * immediately and starts nothing. It also carries what the CLI's table does not:
+ * each model's capabilities and parameter count.
  */
-export async function probe(path: string): Promise<ProviderProbe> {
-  const ask = async (args: string[]): Promise<string | null> => {
-    try { return (await run(path, args, { timeout: 15_000 })).stdout; } catch { return null; }
-  };
-  const [version, list] = await Promise.all([ask(["--version"]), ask(["list"])]);
-  const models = list === null ? [] : parseModelList(list);
+export async function probe(_path: string, base = apiBase()): Promise<ProviderProbe> {
+  let body: unknown;
+  try {
+    const response = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(3000) });
+    if (!response.ok) throw new Error(String(response.status));
+    body = await response.json();
+  } catch {
+    return { version: null, models: [], hint: NOT_RUNNING_HINT };
+  }
+  const models = parseTags(body);
   return {
-    version: firstSemver(version ?? ""),
+    version: await version(base),
     models,
-    hint: list === null ? NOT_RUNNING_HINT : models.length === 0 ? NO_MODELS_HINT : null,
+    hint: models.length === 0 ? NO_MODELS_HINT : null,
   };
+}
+
+async function version(base: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${base}/api/version`, { signal: AbortSignal.timeout(3000) });
+    const body = await response.json() as { version?: unknown };
+    return typeof body.version === "string" ? body.version : null;
+  } catch {
+    return null;
+  }
 }
 
 export const ollamaDescriptor: ProviderDescriptor = { id: "ollama", detect, locate, probe };
