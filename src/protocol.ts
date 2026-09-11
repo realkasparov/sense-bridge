@@ -6,6 +6,8 @@ const EFFORTS: readonly Effort[] = ["low", "medium", "high", "xhigh", "max"];
 export interface Segment { id: string; text: string }
 
 export interface TranslateRequest {
+  /** Which adapter serves this. Absent means claude. */
+  provider: string;
   type: "translate";
   id: number;
   targetLanguage: string;
@@ -27,6 +29,8 @@ export interface TranslateRequest {
  * the square of the batch count — measured, and rejected, on the bridge.
  */
 export interface ContextRequest {
+  /** Which adapter serves this. Absent means claude. */
+  provider: string;
   type: "context";
   id: number;
   targetLanguage: string;
@@ -39,6 +43,8 @@ export interface ContextRequest {
 
 /** Reading an image: the model returns legible text with boxes, never a new image. */
 export interface ImageRequest {
+  /** Which adapter serves this. Absent means claude. */
+  provider: string;
   type: "image";
   id: number;
   targetLanguage: string;
@@ -63,11 +69,23 @@ export type ParseResult =
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
+export const KNOWN_PROVIDERS = ["claude", "ollama"] as const;
+
+const providerOf = (raw: Record<string, unknown>): { ok: true; value: string } | { ok: false; error: string } => {
+  if (raw.provider === undefined) return { ok: true, value: "claude" };
+  if (typeof raw.provider !== "string" || !(KNOWN_PROVIDERS as readonly string[]).includes(raw.provider))
+    return { ok: false, error: `provider must be one of ${KNOWN_PROVIDERS.join(", ")}` };
+  return { ok: true, value: raw.provider };
+};
+
 export function parseRequest(raw: unknown): ParseResult {
   if (!isRecord(raw)) return { ok: false, error: "message is not an object" };
   if (typeof raw.id !== "number") return { ok: false, error: "missing numeric id" };
 
   if (raw.type === "diag") return { ok: true, value: { type: "diag", id: raw.id } };
+
+  const provider = providerOf(raw);
+  if (!provider.ok) return provider;
 
   if (raw.type === "context") {
     if (typeof raw.targetLanguage !== "string" || raw.targetLanguage === "")
@@ -81,7 +99,7 @@ export function parseRequest(raw: unknown): ParseResult {
     if (typeof raw.digest !== "string" || raw.digest.trim() === "")
       return { ok: false, error: "digest must be a non-empty string" };
     return { ok: true, value: {
-      type: "context", id: raw.id, targetLanguage: raw.targetLanguage, model: raw.model,
+      type: "context", id: raw.id, provider: provider.value, targetLanguage: raw.targetLanguage, model: raw.model,
       effort: raw.effort as Effort, budgetUsd: raw.budgetUsd,
       title: typeof raw.title === "string" ? raw.title : "", digest: raw.digest,
     }};
@@ -101,7 +119,7 @@ export function parseRequest(raw: unknown): ParseResult {
     if (typeof raw.dataBase64 !== "string" || raw.dataBase64 === "")
       return { ok: false, error: "dataBase64 must be a non-empty string" };
     return { ok: true, value: {
-      type: "image", id: raw.id, targetLanguage: raw.targetLanguage, model: raw.model,
+      type: "image", id: raw.id, provider: provider.value, targetLanguage: raw.targetLanguage, model: raw.model,
       effort: raw.effort as Effort, budgetUsd: raw.budgetUsd,
       mediaType: raw.mediaType, dataBase64: raw.dataBase64,
       width: typeof raw.width === "number" ? raw.width : undefined,
@@ -141,7 +159,7 @@ export function parseRequest(raw: unknown): ParseResult {
   return {
     ok: true,
     value: {
-      type: "translate", id: raw.id, targetLanguage: raw.targetLanguage, mode: raw.mode,
+      type: "translate", id: raw.id, provider: provider.value, targetLanguage: raw.targetLanguage, mode: raw.mode,
       model: raw.model, effort: raw.effort as Effort, budgetUsd: raw.budgetUsd,
       styleRules: raw.styleRules, glossary: raw.glossary as Record<string, string>,
       contextBrief: typeof raw.contextBrief === "string" ? raw.contextBrief : undefined,
